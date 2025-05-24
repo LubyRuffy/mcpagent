@@ -131,6 +131,20 @@ func NewMCPHub(ctx context.Context, configPath string) (*MCPHub, error) {
 	return newMCPHub(ctx, settings)
 }
 
+// NewMCPHubFromSettings creates a new MCPHub directly from MCPSettings.
+// This is useful when settings are already available in memory.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - settings: MCPSettings containing server configurations
+//
+// Returns:
+//   - *MCPHub: Initialized MCPHub instance
+//   - error: Error if initialization fails
+func NewMCPHubFromSettings(ctx context.Context, settings *MCPSettings) (*MCPHub, error) {
+	return newMCPHub(ctx, settings)
+}
+
 // initializeServers initializes all enabled MCP servers.
 // It iterates through the configuration and establishes connections to each enabled server.
 func (h *MCPHub) initializeServers(ctx context.Context) error {

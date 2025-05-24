@@ -52,12 +52,12 @@ type CommandLineArgs struct {
 	ConfigFile    *string // Path to configuration file
 	Proxy         *string // Proxy server address for HTTP requests
 	MCPConfigFile *string // Path to MCP server configuration file
+	MCPTools      *string // Comma-separated list of tools to use
 	LLMType       *string // LLM provider type (openai or ollama)
 	LLMBaseURL    *string // Base URL for LLM API
 	LLMModel      *string // LLM model name
 	LLMAPIKey     *string // API key for LLM provider
 	SystemPrompt  *string // System prompt for the agent
-	Tools         *string // Comma-separated list of tools to use
 	MaxStep       *int    // Maximum number of reasoning steps
 	Task          *string // Task description to execute
 }
@@ -77,12 +77,12 @@ func parseCommandLineArgs() *CommandLineArgs {
 		ConfigFile:    flag.String("config", "", "配置文件路径"),
 		Proxy:         flag.String("proxy", "", "代理服务器地址"),
 		MCPConfigFile: flag.String("mcp-config", "", "MCP服务器配置文件路径"),
+		MCPTools:      flag.String("mcp-tools", "", "工具列表（用逗号分隔）"),
 		LLMType:       flag.String("llm-type", "", "LLM类型 (openai 或 ollama)"),
 		LLMBaseURL:    flag.String("llm-base-url", "", "LLM API基础URL"),
 		LLMModel:      flag.String("llm-model", "", "LLM模型名称"),
 		LLMAPIKey:     flag.String("llm-api-key", "", "LLM API密钥"),
 		SystemPrompt:  flag.String("system-prompt", "", "系统提示词"),
-		Tools:         flag.String("tools", "", "工具列表（用逗号分隔）"),
 		MaxStep:       flag.Int("max-step", 0, "最大步骤数"),
 		Task:          flag.String("task", "", "要执行的任务"),
 	}
@@ -122,8 +122,8 @@ func mergeCommandLineArgs(cfg *config.Config, args *CommandLineArgs) {
 	if strings.TrimSpace(*args.MCPConfigFile) != "" {
 		cfg.MCP.ConfigFile = *args.MCPConfigFile
 	}
-	if strings.TrimSpace(*args.Tools) != "" {
-		cfg.MCP.Tools = parseToolsList(*args.Tools)
+	if strings.TrimSpace(*args.MCPTools) != "" {
+		cfg.MCP.Tools = parseToolsList(*args.MCPTools)
 	}
 	if strings.TrimSpace(*args.LLMType) != "" {
 		cfg.LLM.Type = *args.LLMType
@@ -236,7 +236,7 @@ func main() {
 	}
 
 	// 保存配置（如果需要）
-	if err := saveConfigIfNeeded(cfg, *args.ConfigFile); err != nil {
+	if err := saveConfigIfNeeded(cfg, "config.yaml"); err != nil {
 		log.Printf("警告: %v", err)
 	}
 

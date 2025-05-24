@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/golang/mock/gomock"
@@ -15,6 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+
 
 // mockTool 是一个模拟的工具
 type mockTool struct {
@@ -73,6 +76,68 @@ system_prompt: Test system prompt
 	assert.Equal(t, "test-api-key", cfg.LLM.APIKey)
 	assert.Equal(t, "Test system prompt", cfg.SystemPrompt)
 	assert.Equal(t, 15, cfg.MaxStep)
+
+	// 测试加载包含MCPServers的配置
+	configPathWithServers := filepath.Join(tempDir, "test_config_with_servers.yaml")
+
+	configContentWithServers := `
+llm:
+  api_key: test-api-key
+  base_url: http://test-url.com
+  model: test-model
+  type: openai
+max_step: 15
+mcp:
+  config_file: ""
+  tools:
+    - tool1
+    - tool2
+  mcp_servers:
+    server1:
+      transport_type: stdio
+      command: echo
+      args:
+        - hello
+    server2:
+      transport_type: http
+      url: http://localhost:8080
+proxy: http://test-proxy.com
+system_prompt: Test system prompt
+`
+	err = os.WriteFile(configPathWithServers, []byte(configContentWithServers), 0644)
+	require.NoError(t, err)
+
+	// 测试加载配置
+	cfgWithServers, err := LoadConfig(configPathWithServers)
+	require.NoError(t, err)
+
+	// 验证配置内容
+	assert.Equal(t, "http://test-proxy.com", cfgWithServers.Proxy)
+	assert.Equal(t, "", cfgWithServers.MCP.ConfigFile) // ConfigFile应该为空
+	assert.Equal(t, []string{"tool1", "tool2"}, cfgWithServers.MCP.Tools)
+
+	// 验证MCPServers
+	assert.Len(t, cfgWithServers.MCP.MCPServers, 2)
+	assert.Contains(t, cfgWithServers.MCP.MCPServers, "server1")
+	assert.Contains(t, cfgWithServers.MCP.MCPServers, "server2")
+
+	// 验证server1配置
+	server1 := cfgWithServers.MCP.MCPServers["server1"]
+	assert.Equal(t, "stdio", server1.TransportType)
+	assert.Equal(t, "echo", server1.Command)
+	assert.Equal(t, []string{"hello"}, server1.Args)
+
+	// 验证server2配置
+	server2 := cfgWithServers.MCP.MCPServers["server2"]
+	assert.Equal(t, "http", server2.TransportType)
+	assert.Equal(t, "http://localhost:8080", server2.URL)
+
+	assert.Equal(t, "openai", cfgWithServers.LLM.Type)
+	assert.Equal(t, "http://test-url.com", cfgWithServers.LLM.BaseURL)
+	assert.Equal(t, "test-model", cfgWithServers.LLM.Model)
+	assert.Equal(t, "test-api-key", cfgWithServers.LLM.APIKey)
+	assert.Equal(t, "Test system prompt", cfgWithServers.SystemPrompt)
+	assert.Equal(t, 15, cfgWithServers.MaxStep)
 }
 
 // TestLoadConfigWithDefaultPath 测试使用默认路径加载配置
@@ -197,6 +262,65 @@ func TestSaveConfig(t *testing.T) {
 	assert.Equal(t, cfg.LLM.Type, loadedCfg.LLM.Type)
 	assert.Equal(t, cfg.LLM.BaseURL, loadedCfg.LLM.BaseURL)
 	assert.Equal(t, cfg.LLM.Model, loadedCfg.LLM.Model)
+
+	// 测试保存和加载包含MCPServers的配置
+	configPathWithServers := filepath.Join(tempDir, "save_config_with_servers_test.yaml")
+
+	// 创建包含MCPServers的配置对象
+	cfgWithServers := &Config{
+		Proxy: "http://save-test-proxy.com",
+		MCP: MCPConfig{
+			ConfigFile: "", // 空的ConfigFile
+			MCPServers: map[string]mcphost.ServerConfig{
+				"server1": {
+					TransportType: "stdio",
+					Command:       "echo",
+					Args:          []string{"hello"},
+				},
+				"server2": {
+					TransportType: "http",
+					URL:           "http://localhost:8080",
+				},
+			},
+			Tools: []string{"save_tool1", "save_tool2"},
+		},
+		LLM: LLMConfig{
+			Type:    "openai",
+			BaseURL: "http://save-test-url.com",
+			Model:   "save-test-model",
+			APIKey:  "save-test-api-key",
+		},
+		SystemPrompt: "Save test system prompt",
+		MaxStep:      25,
+	}
+
+	// 保存配置
+	err = cfgWithServers.SaveConfig(configPathWithServers)
+	require.NoError(t, err)
+
+	// 重新加载配置并验证
+	loadedCfgWithServers, err := LoadConfig(configPathWithServers)
+	require.NoError(t, err)
+
+	assert.Equal(t, cfgWithServers.Proxy, loadedCfgWithServers.Proxy)
+	assert.Equal(t, cfgWithServers.MCP.ConfigFile, loadedCfgWithServers.MCP.ConfigFile)
+	assert.Equal(t, cfgWithServers.MCP.Tools, loadedCfgWithServers.MCP.Tools)
+
+	// 验证MCPServers
+	assert.Len(t, loadedCfgWithServers.MCP.MCPServers, 2)
+	assert.Contains(t, loadedCfgWithServers.MCP.MCPServers, "server1")
+	assert.Contains(t, loadedCfgWithServers.MCP.MCPServers, "server2")
+
+	// 验证server1配置
+	server1 := loadedCfgWithServers.MCP.MCPServers["server1"]
+	assert.Equal(t, "stdio", server1.TransportType)
+	assert.Equal(t, "echo", server1.Command)
+	assert.Equal(t, []string{"hello"}, server1.Args)
+
+	// 验证server2配置
+	server2 := loadedCfgWithServers.MCP.MCPServers["server2"]
+	assert.Equal(t, "http", server2.TransportType)
+	assert.Equal(t, "http://localhost:8080", server2.URL)
 	assert.Equal(t, cfg.LLM.APIKey, loadedCfg.LLM.APIKey)
 	assert.Equal(t, cfg.SystemPrompt, loadedCfg.SystemPrompt)
 	assert.Equal(t, cfg.MaxStep, loadedCfg.MaxStep)
@@ -334,6 +458,7 @@ max_step: 0
 	// 测试加载配置 - 配置验证会失败
 	cfg, err := LoadConfig(configPath)
 	assert.Error(t, err)
+	// LoadConfig在配置验证失败时返回nil和错误
 	assert.Nil(t, cfg)
 	assert.Contains(t, err.Error(), "配置验证失败")
 
@@ -365,13 +490,15 @@ func TestGetTools(t *testing.T) {
 
 	// 保存原始函数并在测试结束后恢复
 	originalNewMCPHub := mcpHubFactory
+	originalNewMCPHubFromSettings := mcpHubFromSettingsFactory
 	defer func() {
 		mcpHubFactory = originalNewMCPHub
+		mcpHubFromSettingsFactory = originalNewMCPHubFromSettings
 	}()
 
 	ctx := context.Background()
 
-	// 测试成功获取工具
+	// 测试使用ConfigFile成功获取工具
 	// 设置模拟函数的行为
 	mockTools := []tool.BaseTool{
 		&mockTool{name: "tool1"},
@@ -401,12 +528,76 @@ func TestGetTools(t *testing.T) {
 	// 执行清理函数
 	cleanup()
 
+	// 测试使用MCPServers成功获取工具
+	mockMCPHub = NewMockMCPHubInterface(ctrl)
+	mockTools = []tool.BaseTool{
+		&mockTool{name: "tool1"},
+		&mockTool{name: "tool2"},
+	}
+	mockMCPHub.EXPECT().GetEinoTools(gomock.Any(), gomock.Eq([]string{"tool1", "tool2"})).Return(mockTools, nil)
+	mockMCPHub.EXPECT().CloseServers().Return(nil)
+
+	// 替换 mcpHubFromSettingsFactory 函数
+	mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPSettings) (MCPHubInterface, error) {
+		return mockMCPHub, nil
+	}
+
+	cfgWithServers := &Config{
+		MCP: MCPConfig{
+			MCPServers: map[string]mcphost.ServerConfig{
+				"server1": {
+					TransportType: "stdio",
+					Command:       "echo",
+				},
+			},
+			Tools: []string{"tool1", "tool2"},
+		},
+	}
+
+	tools, cleanup, err = cfgWithServers.GetTools(ctx)
+	require.NoError(t, err)
+	assert.NotNil(t, tools)
+	assert.NotNil(t, cleanup)
+	assert.Len(t, tools, 2)
+
+	// 执行清理函数
+	cleanup()
+
 	// 测试 NewMCPHub 失败的情况
 	mcpHubFactory = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
 		return nil, fmt.Errorf("模拟 NewMCPHub 失败")
 	}
 
+	cfg = &Config{
+		MCP: MCPConfig{
+			ConfigFile: "test_mcpservers.json",
+			Tools:      []string{"tool1", "tool2"},
+		},
+	}
+
 	tools, cleanup, err = cfg.GetTools(ctx)
+	assert.Error(t, err)
+	assert.Nil(t, tools)
+	assert.Nil(t, cleanup)
+
+	// 测试 NewMCPHubFromSettings 失败的情况
+	mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPSettings) (MCPHubInterface, error) {
+		return nil, fmt.Errorf("模拟 NewMCPHubFromSettings 失败")
+	}
+
+	cfgWithServers = &Config{
+		MCP: MCPConfig{
+			MCPServers: map[string]mcphost.ServerConfig{
+				"server1": {
+					TransportType: "stdio",
+					Command:       "echo",
+				},
+			},
+			Tools: []string{"tool1", "tool2"},
+		},
+	}
+
+	tools, cleanup, err = cfgWithServers.GetTools(ctx)
 	assert.Error(t, err)
 	assert.Nil(t, tools)
 	assert.Nil(t, cleanup)
@@ -420,6 +611,13 @@ func TestGetTools(t *testing.T) {
 		return mockMCPHub, nil
 	}
 
+	cfg = &Config{
+		MCP: MCPConfig{
+			ConfigFile: "test_mcpservers.json",
+			Tools:      []string{"tool1", "tool2"},
+		},
+	}
+
 	tools, cleanup, err = cfg.GetTools(ctx)
 	assert.Error(t, err)
 	assert.Nil(t, tools)
@@ -428,7 +626,7 @@ func TestGetTools(t *testing.T) {
 
 // TestMCPConfigValidate 测试 MCPConfig 的验证方法
 func TestMCPConfigValidate(t *testing.T) {
-	// 测试有效配置
+	// 测试有效配置 - 使用ConfigFile
 	validMCP := MCPConfig{
 		ConfigFile: "valid_config.json",
 		Tools:      []string{"tool1", "tool2"},
@@ -436,9 +634,24 @@ func TestMCPConfigValidate(t *testing.T) {
 	err := validMCP.Validate()
 	assert.NoError(t, err)
 
-	// 测试无效配置 - 空的配置文件路径
+	// 测试有效配置 - 使用MCPServers
+	validMCPWithServers := MCPConfig{
+		ConfigFile: "", // 空的ConfigFile
+		MCPServers: map[string]mcphost.ServerConfig{
+			"server1": {
+				TransportType: "stdio",
+				Command:       "echo",
+			},
+		},
+		Tools: []string{"tool1", "tool2"},
+	}
+	err = validMCPWithServers.Validate()
+	assert.NoError(t, err)
+
+	// 测试无效配置 - 空的配置文件路径且空的MCPServers
 	invalidMCP := MCPConfig{
 		ConfigFile: "",
+		MCPServers: map[string]mcphost.ServerConfig{},
 		Tools:      []string{"tool1"},
 	}
 	err = invalidMCP.Validate()
@@ -511,7 +724,7 @@ func TestLLMConfigValidate(t *testing.T) {
 
 // TestConfigValidate 测试 Config 的验证方法
 func TestConfigValidate(t *testing.T) {
-	// 测试有效配置
+	// 测试有效配置 - 使用ConfigFile
 	validConfig := Config{
 		MCP: MCPConfig{
 			ConfigFile: "valid_config.json",
@@ -526,6 +739,29 @@ func TestConfigValidate(t *testing.T) {
 		MaxStep: 10,
 	}
 	err := validConfig.Validate()
+	assert.NoError(t, err)
+
+	// 测试有效配置 - 使用MCPServers
+	validConfigWithServers := Config{
+		MCP: MCPConfig{
+			ConfigFile: "", // 空的ConfigFile
+			MCPServers: map[string]mcphost.ServerConfig{
+				"server1": {
+					TransportType: "stdio",
+					Command:       "echo",
+				},
+			},
+			Tools: []string{"tool1"},
+		},
+		LLM: LLMConfig{
+			Type:    LLMProviderOpenAI,
+			BaseURL: "http://api.openai.com",
+			Model:   "gpt-3.5-turbo",
+			APIKey:  "test-key",
+		},
+		MaxStep: 10,
+	}
+	err = validConfigWithServers.Validate()
 	assert.NoError(t, err)
 
 	// 测试 MCP 配置无效
@@ -728,7 +964,7 @@ func TestNewDefaultConfig(t *testing.T) {
 
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "", cfg.Proxy)
-	assert.Equal(t, defaultMCPConfigFile, cfg.MCP.ConfigFile)
+	assert.Equal(t, "mcpservers.json", cfg.MCP.ConfigFile)
 	assert.Equal(t, []string{}, cfg.MCP.Tools)
 	assert.Equal(t, LLMProviderOllama, cfg.LLM.Type)
 	assert.Equal(t, defaultOllamaBaseURL, cfg.LLM.BaseURL)

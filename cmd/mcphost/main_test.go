@@ -110,7 +110,7 @@ func TestMergeCommandLineArgs(t *testing.T) {
 	args := &CommandLineArgs{
 		Proxy:         &proxy,
 		MCPConfigFile: &mcpConfigFile,
-		Tools:         &tools,
+		MCPTools:      &tools,
 		LLMType:       &llmType,
 		LLMBaseURL:    &llmBaseURL,
 		LLMModel:      &llmModel,
@@ -166,7 +166,7 @@ func TestMergeCommandLineArgsWithEmptyValues(t *testing.T) {
 	args := &CommandLineArgs{
 		Proxy:         &proxy,
 		MCPConfigFile: &mcpConfigFile,
-		Tools:         &tools,
+		MCPTools:      &tools,
 		LLMType:       &llmType,
 		LLMBaseURL:    &llmBaseURL,
 		LLMModel:      &llmModel,
@@ -254,7 +254,7 @@ max_step: 20
 		ConfigFile:    &configFile,
 		Proxy:         &proxy,
 		MCPConfigFile: new(string),
-		Tools:         new(string),
+		MCPTools:      new(string),
 		LLMType:       new(string),
 		LLMBaseURL:    new(string),
 		LLMModel:      new(string),
@@ -277,7 +277,7 @@ func TestLoadAndMergeConfigWithInvalidFile(t *testing.T) {
 		ConfigFile:    &nonExistentFile,
 		Proxy:         new(string),
 		MCPConfigFile: new(string),
-		Tools:         new(string),
+		MCPTools:      new(string),
 		LLMType:       new(string),
 		LLMBaseURL:    new(string),
 		LLMModel:      new(string),
@@ -336,7 +336,7 @@ func TestParseCommandLineArgsStructure(t *testing.T) {
 	assert.NotNil(t, args.LLMModel)
 	assert.NotNil(t, args.LLMAPIKey)
 	assert.NotNil(t, args.SystemPrompt)
-	assert.NotNil(t, args.Tools)
+	assert.NotNil(t, args.MCPTools)
 	assert.NotNil(t, args.MaxStep)
 	assert.NotNil(t, args.Task)
 

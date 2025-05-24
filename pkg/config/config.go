@@ -59,7 +59,6 @@ const (
 const (
 	defaultConfigName    = "config"
 	defaultConfigType    = "yaml"
-	defaultMCPConfigFile = "mcpservers.json"
 	defaultOllamaBaseURL = "http://127.0.0.1:11434"
 	defaultOllamaModel   = "qwen3:4b"
 	defaultOllamaAPIKey  = "ollama"
@@ -100,20 +99,35 @@ var mcpHubFactory = func(ctx context.Context, configFile string) (MCPHubInterfac
 	return mcphost.NewMCPHub(ctx, configFile)
 }
 
+// mcpHubFromSettingsFactory is a factory function for creating MCPHub instances from settings.
+// This variable allows for dependency injection during testing by replacing
+// the factory function with a mock implementation.
+var mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPSettings) (MCPHubInterface, error) {
+	return mcphost.NewMCPHubFromSettings(ctx, settings)
+}
+
 // MCPConfig represents MCP (Model Context Protocol) server configuration settings.
-// It contains the path to MCP server configuration file and the list of tools to use.
+// It contains either the path to MCP server configuration file or direct MCPServers configuration,
+// along with the list of tools to use.
 type MCPConfig struct {
-	ConfigFile string   `mapstructure:"config_file" json:"config_file" yaml:"config_file"` // MCP服务器配置文件路径
-	Tools      []string `mapstructure:"tools" json:"tools" yaml:"tools"`                   // 工具列表
+	ConfigFile string                          `mapstructure:"config_file" json:"config_file" yaml:"config_file"` // MCP服务器配置文件路径
+	MCPServers map[string]mcphost.ServerConfig `mapstructure:"mcp_servers" json:"mcp_servers" yaml:"mcp_servers"` // MCP服务器直接配置
+	Tools      []string                        `mapstructure:"tools" json:"tools" yaml:"tools"`                   // 工具列表
 }
 
 // Validate validates the MCP configuration.
-// It ensures that the configuration file path is not empty after trimming whitespace.
+// It ensures that either the configuration file path is not empty or MCPServers is provided.
 // Note: File existence is not checked here as it's more appropriate to check at runtime.
 //
 // Returns:
 //   - error: validation error if configuration is invalid, nil otherwise
 func (m *MCPConfig) Validate() error {
+	// 如果MCPServers不为空，则优先使用MCPServers配置
+	if len(m.MCPServers) > 0 {
+		return nil
+	}
+
+	// 否则检查ConfigFile是否为空
 	if strings.TrimSpace(m.ConfigFile) == "" {
 		return errors.New(errMsgMCPConfigFileEmpty)
 	}
@@ -302,7 +316,23 @@ func (c *Config) createOllamaModel(ctx context.Context, httpClient *http.Client)
 //	defer cleanup() // Important: always call cleanup
 func (c *Config) GetTools(ctx context.Context) ([]tool.BaseTool, func(), error) {
 	// 连接mcp服务器
-	mcpHub, err := mcpHubFactory(ctx, c.MCP.ConfigFile)
+	var mcpHub MCPHubInterface
+	var err error
+
+	// 如果MCPServers不为空，则优先使用MCPServers配置
+	if len(c.MCP.MCPServers) > 0 {
+		// 创建MCPSettings
+		settings := &mcphost.MCPSettings{
+			MCPServers: c.MCP.MCPServers,
+		}
+
+		// 使用MCPSettings创建MCPHub
+		mcpHub, err = mcpHubFromSettingsFactory(ctx, settings)
+	} else {
+		// 否则使用ConfigFile
+		mcpHub, err = mcpHubFactory(ctx, c.MCP.ConfigFile)
+	}
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("连接MCP服务器失败: %w", err)
 	}
@@ -352,6 +382,7 @@ func (c *Config) SaveConfig(configFile string) error {
 func (c *Config) setViperValues() {
 	viper.Set("proxy", c.Proxy)
 	viper.Set("mcp.config_file", c.MCP.ConfigFile)
+	viper.Set("mcp.mcp_servers", c.MCP.MCPServers)
 	viper.Set("mcp.tools", c.MCP.Tools)
 	viper.Set("llm.type", c.LLM.Type)
 	viper.Set("llm.base_url", c.LLM.BaseURL)
@@ -376,9 +407,8 @@ func (c *Config) setViperValues() {
 //   - *Config: Default configuration ready for use or customization
 func NewDefaultConfig() *Config {
 	return &Config{
-		Proxy: "",
 		MCP: MCPConfig{
-			ConfigFile: defaultMCPConfigFile,
+			ConfigFile: "mcpservers.json",
 			Tools:      []string{},
 		},
 		LLM: LLMConfig{

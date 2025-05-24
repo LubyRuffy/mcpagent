@@ -78,18 +78,18 @@ type MCPSettings struct {
 //   - SSE transport: Requires URL field
 //   - Stdio transport: Requires Command field, optional Args and Env
 type ServerConfig struct {
-	TransportType string        `json:"transportType,omitempty"` // "sse" or "stdio" (defaults to "stdio")
-	AutoApprove   []string      `json:"autoApprove,omitempty"`   // List of auto-approved operations
-	Disabled      bool          `json:"disabled,omitempty"`      // Whether the server is disabled
-	Timeout       time.Duration `json:"timeout,omitempty"`       // Operation timeout (defaults to 30s)
+	TransportType string        `json:"transportType,omitempty" yaml:"transport_type,omitempty" mapstructure:"transport_type"` // "sse" or "stdio" (defaults to "stdio")
+	AutoApprove   []string      `json:"autoApprove,omitempty" yaml:"auto_approve,omitempty" mapstructure:"auto_approve"`       // List of auto-approved operations
+	Disabled      bool          `json:"disabled,omitempty" yaml:"disabled,omitempty" mapstructure:"disabled"`                  // Whether the server is disabled
+	Timeout       time.Duration `json:"timeout,omitempty" yaml:"timeout,omitempty" mapstructure:"timeout"`                     // Operation timeout (defaults to 30s)
 
 	// SSE specific configuration
-	URL string `json:"url,omitempty"` // Server URL for SSE transport
+	URL string `json:"url,omitempty" yaml:"url,omitempty" mapstructure:"url"` // Server URL for SSE transport
 
 	// Stdio specific configuration
-	Command string            `json:"command"`       // Command to execute for stdio transport
-	Args    []string          `json:"args"`          // Command arguments
-	Env     map[string]string `json:"env,omitempty"` // Environment variables
+	Command string            `json:"command" yaml:"command" mapstructure:"command"`          // Command to execute for stdio transport
+	Args    []string          `json:"args" yaml:"args" mapstructure:"args"`                   // Command arguments
+	Env     map[string]string `json:"env,omitempty" yaml:"env,omitempty" mapstructure:"env"` // Environment variables
 }
 
 // GetTimeoutDuration returns the timeout duration for the server.
