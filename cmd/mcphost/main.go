@@ -1,6 +1,13 @@
-// Package main provides the command-line interface for the MCP Agent.
+// Package main provides the command-line interface for the FOFA Logs AI application.
 // It handles configuration parsing, command-line argument processing,
 // and orchestrates the execution of MCP agent tasks.
+//
+// The application supports:
+// - Configuration loading from files and environment variables
+// - Command-line argument override of configuration values
+// - Graceful shutdown on interrupt signals
+// - Comprehensive error handling and logging
+// - Multiple LLM providers and MCP server configurations
 package main
 
 import (
@@ -13,44 +20,58 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/LubyRuffy/mcpagent/pkg/config"
-	"github.com/LubyRuffy/mcpagent/pkg/mcpagent"
+	"github.com/LubyRuffy/fofalogsai/pkg/config"
+	"github.com/LubyRuffy/fofalogsai/pkg/mcpagent"
 )
 
-// 常量定义
+// Exit code constants
 const (
 	// ExitCodeSuccess represents successful execution
 	ExitCodeSuccess = 0
 	// ExitCodeError represents error during execution
 	ExitCodeError = 1
+)
 
-	// 默认值
+// Default values for command-line parsing
+const (
 	defaultToolsSeparator = ","
 )
 
-// CommandLineArgs holds all command line arguments
+// Error message constants
+const (
+	errMsgTaskRequired     = "请使用 -task 参数指定要执行的任务"
+	errMsgLoadConfigFailed = "加载配置失败: %w"
+	errMsgConfigValidation = "配置验证失败: %w"
+	errMsgSaveConfigFailed = "保存配置失败: %w"
+	errMsgExecutionFailed  = "执行任务失败: %w"
+)
+
+// CommandLineArgs holds all command line arguments in a structured format.
+// This struct provides type safety and clear documentation for all available options.
 type CommandLineArgs struct {
-	ConfigFile    *string
-	Proxy         *string
-	MCPConfigFile *string
-	LLMType       *string
-	LLMBaseURL    *string
-	LLMModel      *string
-	LLMAPIKey     *string
-	SystemPrompt  *string
-	Tools         *string
-	MaxStep       *int
-	Task          *string
+	ConfigFile    *string // Path to configuration file
+	Proxy         *string // Proxy server address for HTTP requests
+	MCPConfigFile *string // Path to MCP server configuration file
+	LLMType       *string // LLM provider type (openai or ollama)
+	LLMBaseURL    *string // Base URL for LLM API
+	LLMModel      *string // LLM model name
+	LLMAPIKey     *string // API key for LLM provider
+	SystemPrompt  *string // System prompt for the agent
+	Tools         *string // Comma-separated list of tools to use
+	MaxStep       *int    // Maximum number of reasoning steps
+	Task          *string // Task description to execute
 }
 
-// fatalError handles fatal errors by logging and exiting
+// fatalError handles fatal errors by logging and exiting with error code.
+// This provides a consistent way to handle unrecoverable errors.
 func fatalError(err error) {
 	if err != nil {
 		log.Fatalf("致命错误: %v", err)
 	}
 }
 
-// parseCommandLineArgs parses and returns command line arguments
+// parseCommandLineArgs parses and returns command line arguments.
+// It sets up all available flags with appropriate descriptions and default values.
 func parseCommandLineArgs() *CommandLineArgs {
 	args := &CommandLineArgs{
 		ConfigFile:    flag.String("config", "", "配置文件路径"),
@@ -70,49 +91,53 @@ func parseCommandLineArgs() *CommandLineArgs {
 	return args
 }
 
-// loadAndMergeConfig loads configuration from file and merges with command line arguments
+// loadAndMergeConfig loads configuration from file and merges with command line arguments.
+// Command line arguments take precedence over configuration file values.
+// This allows for flexible configuration management with override capabilities.
 func loadAndMergeConfig(args *CommandLineArgs) (*config.Config, error) {
-	// 加载配置文件
+	// Load base configuration from file
 	cfg, err := config.LoadConfig(*args.ConfigFile)
 	if err != nil {
-		return nil, fmt.Errorf("加载配置失败: %w", err)
+		return nil, fmt.Errorf(errMsgLoadConfigFailed, err)
 	}
 
-	// 命令行参数优先级高于配置文件
+	// Merge command line arguments (they take precedence)
 	mergeCommandLineArgs(cfg, args)
 
-	// 验证配置
+	// Validate the final configuration
 	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("配置验证失败: %w", err)
+		return nil, fmt.Errorf(errMsgConfigValidation, err)
 	}
 
 	return cfg, nil
 }
 
-// mergeCommandLineArgs merges command line arguments into configuration
+// mergeCommandLineArgs merges command line arguments into configuration.
+// Only non-empty command line values override configuration file values.
+// This preserves the configuration file defaults when command line args are not provided.
 func mergeCommandLineArgs(cfg *config.Config, args *CommandLineArgs) {
-	if *args.Proxy != "" {
+	if strings.TrimSpace(*args.Proxy) != "" {
 		cfg.Proxy = *args.Proxy
 	}
-	if *args.MCPConfigFile != "" {
+	if strings.TrimSpace(*args.MCPConfigFile) != "" {
 		cfg.MCP.ConfigFile = *args.MCPConfigFile
 	}
-	if *args.Tools != "" {
+	if strings.TrimSpace(*args.Tools) != "" {
 		cfg.MCP.Tools = parseToolsList(*args.Tools)
 	}
-	if *args.LLMType != "" {
+	if strings.TrimSpace(*args.LLMType) != "" {
 		cfg.LLM.Type = *args.LLMType
 	}
-	if *args.LLMBaseURL != "" {
+	if strings.TrimSpace(*args.LLMBaseURL) != "" {
 		cfg.LLM.BaseURL = *args.LLMBaseURL
 	}
-	if *args.LLMModel != "" {
+	if strings.TrimSpace(*args.LLMModel) != "" {
 		cfg.LLM.Model = *args.LLMModel
 	}
-	if *args.LLMAPIKey != "" {
+	if strings.TrimSpace(*args.LLMAPIKey) != "" {
 		cfg.LLM.APIKey = *args.LLMAPIKey
 	}
-	if *args.SystemPrompt != "" {
+	if strings.TrimSpace(*args.SystemPrompt) != "" {
 		cfg.SystemPrompt = *args.SystemPrompt
 	}
 	if *args.MaxStep != 0 {
@@ -120,19 +145,28 @@ func mergeCommandLineArgs(cfg *config.Config, args *CommandLineArgs) {
 	}
 }
 
-// parseToolsList parses comma-separated tools list
+// parseToolsList parses comma-separated tools list into a slice.
+// It handles whitespace trimming and empty string filtering.
 func parseToolsList(toolsStr string) []string {
-	if toolsStr == "" {
+	if strings.TrimSpace(toolsStr) == "" {
 		return []string{}
 	}
 
 	tools := strings.Split(toolsStr, defaultToolsSeparator)
-	// 去除空白字符
+	// Trim whitespace from each tool name
 	for i, tool := range tools {
 		tools[i] = strings.TrimSpace(tool)
 	}
 
-	return tools
+	// Filter out empty strings
+	var filteredTools []string
+	for _, tool := range tools {
+		if tool != "" {
+			filteredTools = append(filteredTools, tool)
+		}
+	}
+
+	return filteredTools
 }
 
 // saveConfigIfNeeded saves configuration to file if a config file path is provided
@@ -142,7 +176,7 @@ func saveConfigIfNeeded(cfg *config.Config, configFile string) error {
 	}
 
 	if err := cfg.SaveConfig(configFile); err != nil {
-		return fmt.Errorf("保存配置失败: %w", err)
+		return fmt.Errorf(errMsgSaveConfigFailed, err)
 	}
 
 	log.Printf("配置已保存到: %s", configFile)
@@ -164,7 +198,7 @@ func setupSignalHandling(cancel context.CancelFunc) {
 // validateTask validates that a task is provided
 func validateTask(task string) error {
 	if task == "" {
-		return fmt.Errorf("请使用 -task 参数指定要执行的任务")
+		return fmt.Errorf(errMsgTaskRequired)
 	}
 	return nil
 }
@@ -176,7 +210,7 @@ func runAgent(ctx context.Context, cfg *config.Config, task string) error {
 	log.Printf("开始执行任务: %s", task)
 
 	if err := mcpagent.Run(ctx, cfg, task, notify); err != nil {
-		return fmt.Errorf("执行任务失败: %w", err)
+		return fmt.Errorf(errMsgExecutionFailed, err)
 	}
 
 	log.Println("任务执行完成")

@@ -1,5 +1,12 @@
 // Package mcpagent provides MCP (Model Context Protocol) agent functionality
 // for executing tasks with tool calling capabilities and notification support.
+//
+// The package implements a ReAct (Reasoning and Acting) agent that can:
+// - Execute complex tasks using available MCP tools
+// - Provide real-time notifications during execution
+// - Handle streaming responses and tool calls
+// - Support multiple LLM providers (OpenAI, Ollama)
+// - Manage tool execution lifecycle with proper cleanup
 package mcpagent
 
 import (
@@ -9,9 +16,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
-	"github.com/LubyRuffy/mcpagent/pkg/config"
+	"github.com/LubyRuffy/fofalogsai/pkg/config"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
@@ -22,7 +30,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// 常量定义
+// Tool name constants for special handling
 const (
 	// ToolSequentialThinking represents the sequential thinking tool name
 	ToolSequentialThinking = "sequentialthinking"
@@ -30,16 +38,41 @@ const (
 	ToolWebSearch = "web_search"
 	// ToolURLMarkdown represents the URL markdown tool name
 	ToolURLMarkdown = "url_markdown"
+)
+
+// Field name constants for tool arguments
+const (
 	// ThinkFieldName represents the think field name in tool arguments
 	ThinkFieldName = "think"
+)
+
+// Message constants
+const (
 	// ToolCallingPrefix represents the prefix for tool calling messages
 	ToolCallingPrefix = "正在调用工具："
 )
 
+// Error message constants
+const (
+	errMsgConfigNil         = "配置不能为空"
+	errMsgTaskEmpty         = "任务不能为空"
+	errMsgNotifyNil         = "通知处理器不能为空"
+	errMsgGetToolsFailed    = "获取工具失败: %w"
+	errMsgGetModelFailed    = "获取模型失败: %w"
+	errMsgCreateAgentFailed = "创建agent失败: %w"
+	errMsgExecuteTaskFailed = "执行任务失败: %w"
+	errMsgParseArgsFailed   = "解析工具参数失败: %w"
+	errMsgHandleToolFailed  = "处理工具调用失败: %w"
+	errMsgFormatMsgFailed   = "格式化消息失败: %w"
+	errMsgGenerateOutFailed = "生成输出失败: %w"
+	errMsgSerializeFrame    = "序列化流帧失败: %w"
+)
+
 // Notify defines the interface for handling various types of notifications
-// during agent execution.
+// during agent execution. Implementations should handle these notifications
+// appropriately for their context (CLI, web UI, etc.).
 type Notify interface {
-	// OnMessage sends a message notification
+	// OnMessage sends a message notification during execution
 	OnMessage(msg string)
 	// OnResult sends a result notification when the agent completes successfully
 	OnResult(msg string)
@@ -50,13 +83,19 @@ type Notify interface {
 // LoggerCallback implements the callback interface for logging and notification
 // during agent execution. It provides hooks for different stages of the agent's
 // lifecycle including start, end, error, and streaming operations.
+//
+// The callback processes tool calls and extracts relevant information for
+// user notification, particularly handling special tools like sequential thinking
+// and web-related operations.
 type LoggerCallback struct {
-	notify                   Notify
-	callbacks.HandlerBuilder // 可以用 callbacks.HandlerBuilder 来辅助实现 callback
+	notify                   Notify // Notification handler
+	callbacks.HandlerBuilder        // Embedded handler builder for callback implementation
 }
 
 // OnStart is called when a callback operation starts. It processes tool calls
 // and sends appropriate notifications based on the tool type.
+// This method is particularly important for providing real-time feedback
+// during tool execution.
 func (cb *LoggerCallback) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	message, ok := input.(*schema.Message)
 	if !ok {
@@ -71,21 +110,23 @@ func (cb *LoggerCallback) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	return ctx
 }
 
-// processToolCalls processes the tool calls and sends appropriate notifications
+// processToolCalls processes the tool calls and sends appropriate notifications.
+// It handles each tool call individually and logs any errors that occur.
 func (cb *LoggerCallback) processToolCalls(toolCalls []schema.ToolCall) {
 	for _, toolCall := range toolCalls {
 		if err := cb.handleSingleToolCall(toolCall); err != nil {
 			log.Printf("处理工具调用失败: %v", err)
-			cb.notify.OnError(fmt.Errorf("处理工具调用失败: %w", err))
+			cb.notify.OnError(fmt.Errorf(errMsgHandleToolFailed, err))
 		}
 	}
 }
 
-// handleSingleToolCall processes a single tool call and extracts relevant information
+// handleSingleToolCall processes a single tool call and extracts relevant information.
+// It parses the tool arguments and delegates to specific handlers based on tool type.
 func (cb *LoggerCallback) handleSingleToolCall(toolCall schema.ToolCall) error {
 	arguments, err := cb.parseToolArguments(toolCall.Function.Arguments)
 	if err != nil {
-		return fmt.Errorf("解析工具参数失败: %w", err)
+		return fmt.Errorf(errMsgParseArgsFailed, err)
 	}
 
 	switch toolCall.Function.Name {
@@ -100,8 +141,13 @@ func (cb *LoggerCallback) handleSingleToolCall(toolCall schema.ToolCall) error {
 	return nil
 }
 
-// parseToolArguments parses the JSON arguments of a tool call
+// parseToolArguments parses the JSON arguments of a tool call.
+// It converts the JSON string to a map for easier processing.
 func (cb *LoggerCallback) parseToolArguments(arguments string) (map[string]interface{}, error) {
+	if strings.TrimSpace(arguments) == "" {
+		return make(map[string]interface{}), nil
+	}
+
 	var parsedArgs map[string]interface{}
 	if err := json.Unmarshal([]byte(arguments), &parsedArgs); err != nil {
 		return nil, err
@@ -109,19 +155,21 @@ func (cb *LoggerCallback) parseToolArguments(arguments string) (map[string]inter
 	return parsedArgs, nil
 }
 
-// handleThinkingTool handles the sequential thinking tool
+// handleThinkingTool handles the sequential thinking tool.
+// It extracts the thinking content and sends it as a notification.
 func (cb *LoggerCallback) handleThinkingTool(arguments map[string]interface{}) {
 	if thinkValue, exists := arguments[ThinkFieldName]; exists {
-		if thinkStr, ok := thinkValue.(string); ok {
+		if thinkStr, ok := thinkValue.(string); ok && strings.TrimSpace(thinkStr) != "" {
 			cb.notify.OnMessage(thinkStr)
 		}
 	}
 }
 
-// handleWebTool handles web-related tools (search, markdown)
+// handleWebTool handles web-related tools (search, markdown).
+// It extracts thinking content if present and notifies about tool execution.
 func (cb *LoggerCallback) handleWebTool(toolName string, arguments map[string]interface{}) {
 	if thinkValue, exists := arguments[ThinkFieldName]; exists {
-		if thinkStr, ok := thinkValue.(string); ok {
+		if thinkStr, ok := thinkValue.(string); ok && strings.TrimSpace(thinkStr) != "" {
 			cb.notify.OnMessage(thinkStr)
 		}
 	}
@@ -183,7 +231,7 @@ func (cb *LoggerCallback) handleStreamOutput(info *callbacks.RunInfo, output *sc
 func (cb *LoggerCallback) processStreamFrame(info *callbacks.RunInfo, frame callbacks.CallbackOutput) error {
 	frameData, err := json.Marshal(frame)
 	if err != nil {
-		return fmt.Errorf("序列化流帧失败: %w", err)
+		return fmt.Errorf(errMsgSerializeFrame, err)
 	}
 
 	// 仅打印 graph 的输出, 否则每个 stream 节点的输出都会打印一遍
@@ -226,20 +274,20 @@ func Run(ctx context.Context, cfg *config.Config, task string, notify Notify) er
 	// 获取工具
 	einoTools, cleanup, err := cfg.GetTools(ctx)
 	if err != nil {
-		return fmt.Errorf("获取工具失败: %w", err)
+		return fmt.Errorf(errMsgGetToolsFailed, err)
 	}
 	defer cleanup()
 
 	// 获取模型
 	toolableChatModel, err := cfg.GetModel(ctx)
 	if err != nil {
-		return fmt.Errorf("获取模型失败: %w", err)
+		return fmt.Errorf(errMsgGetModelFailed, err)
 	}
 
 	// 创建agent
 	ragent, err := createReActAgent(ctx, cfg, einoTools, toolableChatModel)
 	if err != nil {
-		return fmt.Errorf("创建agent失败: %w", err)
+		return fmt.Errorf(errMsgCreateAgentFailed, err)
 	}
 
 	// 执行任务
@@ -249,13 +297,13 @@ func Run(ctx context.Context, cfg *config.Config, task string, notify Notify) er
 // validateRunParameters 验证Run函数的输入参数
 func validateRunParameters(cfg *config.Config, task string, notify Notify) error {
 	if cfg == nil {
-		return errors.New("配置不能为空")
+		return errors.New(errMsgConfigNil)
 	}
 	if task == "" {
-		return errors.New("任务不能为空")
+		return errors.New(errMsgTaskEmpty)
 	}
 	if notify == nil {
-		return errors.New("通知处理器不能为空")
+		return errors.New(errMsgNotifyNil)
 	}
 	return nil
 }
@@ -294,7 +342,7 @@ func executeAgentTask(ctx context.Context, cfg *config.Config, ragent *react.Age
 		"total_thoughts": cfg.MaxStep,
 	})
 	if err != nil {
-		return fmt.Errorf("格式化消息失败: %w", err)
+		return fmt.Errorf(errMsgFormatMsgFailed, err)
 	}
 
 	// 生成输出
@@ -303,7 +351,7 @@ func executeAgentTask(ctx context.Context, cfg *config.Config, ragent *react.Age
 			notify: notify,
 		})))
 	if err != nil {
-		return fmt.Errorf("生成输出失败: %w", err)
+		return fmt.Errorf(errMsgGenerateOutFailed, err)
 	}
 
 	notify.OnResult(output.Content)

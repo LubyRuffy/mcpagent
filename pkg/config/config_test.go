@@ -364,9 +364,9 @@ func TestGetTools(t *testing.T) {
 	mockMCPHub := NewMockMCPHubInterface(ctrl)
 
 	// 保存原始函数并在测试结束后恢复
-	originalNewMCPHub := mcphostNewMCPHub
+	originalNewMCPHub := mcpHubFactory
 	defer func() {
-		mcphostNewMCPHub = originalNewMCPHub
+		mcpHubFactory = originalNewMCPHub
 	}()
 
 	ctx := context.Background()
@@ -380,8 +380,8 @@ func TestGetTools(t *testing.T) {
 	mockMCPHub.EXPECT().GetEinoTools(gomock.Any(), gomock.Eq([]string{"tool1", "tool2"})).Return(mockTools, nil)
 	mockMCPHub.EXPECT().CloseServers().Return(nil)
 
-	// 替换 mcphostNewMCPHub 函数
-	mcphostNewMCPHub = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
+	// 替换 mcpHubFactory 函数
+	mcpHubFactory = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
 		return mockMCPHub, nil
 	}
 
@@ -402,7 +402,7 @@ func TestGetTools(t *testing.T) {
 	cleanup()
 
 	// 测试 NewMCPHub 失败的情况
-	mcphostNewMCPHub = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
+	mcpHubFactory = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
 		return nil, fmt.Errorf("模拟 NewMCPHub 失败")
 	}
 
@@ -416,7 +416,7 @@ func TestGetTools(t *testing.T) {
 	mockMCPHub.EXPECT().GetEinoTools(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("模拟获取工具失败"))
 	mockMCPHub.EXPECT().CloseServers().Return(nil).AnyTimes()
 
-	mcphostNewMCPHub = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
+	mcpHubFactory = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
 		return mockMCPHub, nil
 	}
 
@@ -450,7 +450,7 @@ func TestMCPConfigValidate(t *testing.T) {
 func TestLLMConfigValidate(t *testing.T) {
 	// 测试有效的 OpenAI 配置
 	validOpenAI := LLMConfig{
-		Type:    LLMTypeOpenAI,
+		Type:    LLMProviderOpenAI,
 		BaseURL: "http://api.openai.com",
 		Model:   "gpt-3.5-turbo",
 		APIKey:  "sk-test-key",
@@ -460,7 +460,7 @@ func TestLLMConfigValidate(t *testing.T) {
 
 	// 测试有效的 Ollama 配置
 	validOllama := LLMConfig{
-		Type:    LLMTypeOllama,
+		Type:    LLMProviderOllama,
 		BaseURL: "http://localhost:11434",
 		Model:   "llama2",
 		APIKey:  "ollama",
@@ -490,7 +490,7 @@ func TestLLMConfigValidate(t *testing.T) {
 
 	// 测试空 BaseURL
 	emptyBaseURL := LLMConfig{
-		Type:    LLMTypeOpenAI,
+		Type:    LLMProviderOpenAI,
 		BaseURL: "",
 		Model:   "test-model",
 	}
@@ -500,7 +500,7 @@ func TestLLMConfigValidate(t *testing.T) {
 
 	// 测试空模型名称
 	emptyModel := LLMConfig{
-		Type:    LLMTypeOpenAI,
+		Type:    LLMProviderOpenAI,
 		BaseURL: "http://localhost",
 		Model:   "",
 	}
@@ -518,7 +518,7 @@ func TestConfigValidate(t *testing.T) {
 			Tools:      []string{"tool1"},
 		},
 		LLM: LLMConfig{
-			Type:    LLMTypeOpenAI,
+			Type:    LLMProviderOpenAI,
 			BaseURL: "http://api.openai.com",
 			Model:   "gpt-3.5-turbo",
 			APIKey:  "test-key",
@@ -534,7 +534,7 @@ func TestConfigValidate(t *testing.T) {
 			ConfigFile: "", // 无效
 		},
 		LLM: LLMConfig{
-			Type:    LLMTypeOpenAI,
+			Type:    LLMProviderOpenAI,
 			BaseURL: "http://api.openai.com",
 			Model:   "gpt-3.5-turbo",
 		},
@@ -564,7 +564,7 @@ func TestConfigValidate(t *testing.T) {
 			ConfigFile: "valid_config.json",
 		},
 		LLM: LLMConfig{
-			Type:    LLMTypeOpenAI,
+			Type:    LLMProviderOpenAI,
 			BaseURL: "http://api.openai.com",
 			Model:   "gpt-3.5-turbo",
 		},
@@ -582,7 +582,7 @@ func TestSaveConfigValidation(t *testing.T) {
 			ConfigFile: "test_config.json",
 		},
 		LLM: LLMConfig{
-			Type:    LLMTypeOpenAI,
+			Type:    LLMProviderOpenAI,
 			BaseURL: "http://api.openai.com",
 			Model:   "gpt-3.5-turbo",
 		},
@@ -631,7 +631,7 @@ func TestCreateHTTPClient(t *testing.T) {
 func TestCreateModels(t *testing.T) {
 	cfg := &Config{
 		LLM: LLMConfig{
-			Type:    LLMTypeOpenAI,
+			Type:    LLMProviderOpenAI,
 			BaseURL: "http://api.openai.com",
 			Model:   "gpt-3.5-turbo",
 			APIKey:  "test-key",
@@ -647,7 +647,7 @@ func TestCreateModels(t *testing.T) {
 	assert.NotNil(t, model)
 
 	// 测试创建 Ollama 模型
-	cfg.LLM.Type = LLMTypeOllama
+	cfg.LLM.Type = LLMProviderOllama
 	model, err = cfg.createOllamaModel(ctx, httpClient)
 	assert.NoError(t, err)
 	assert.NotNil(t, model)
@@ -655,7 +655,7 @@ func TestCreateModels(t *testing.T) {
 
 // TestGetDefaultConfig 测试默认配置
 func TestGetDefaultConfig(t *testing.T) {
-	config := getDefaultConfig()
+	config := NewDefaultConfig()
 
 	assert.Equal(t, "", config.Proxy)
 	assert.Equal(t, "mcpservers.json", config.MCP.ConfigFile)
@@ -718,6 +718,302 @@ max_step: 10
 
 // TestConstants 测试常量值
 func TestConstants(t *testing.T) {
-	assert.Equal(t, "openai", LLMTypeOpenAI)
-	assert.Equal(t, "ollama", LLMTypeOllama)
+	assert.Equal(t, "openai", LLMProviderOpenAI)
+	assert.Equal(t, "ollama", LLMProviderOllama)
+}
+
+// TestNewDefaultConfig tests the NewDefaultConfig function
+func TestNewDefaultConfig(t *testing.T) {
+	cfg := NewDefaultConfig()
+
+	assert.NotNil(t, cfg)
+	assert.Equal(t, "", cfg.Proxy)
+	assert.Equal(t, defaultMCPConfigFile, cfg.MCP.ConfigFile)
+	assert.Equal(t, []string{}, cfg.MCP.Tools)
+	assert.Equal(t, LLMProviderOllama, cfg.LLM.Type)
+	assert.Equal(t, defaultOllamaBaseURL, cfg.LLM.BaseURL)
+	assert.Equal(t, defaultOllamaModel, cfg.LLM.Model)
+	assert.Equal(t, defaultOllamaAPIKey, cfg.LLM.APIKey)
+	assert.Equal(t, defaultSystemPrompt, cfg.SystemPrompt)
+	assert.Equal(t, defaultMaxStep, cfg.MaxStep)
+}
+
+// TestMCPConfigValidateWithWhitespace tests MCP config validation with whitespace
+func TestMCPConfigValidateWithWhitespace(t *testing.T) {
+	tests := []struct {
+		name        string
+		configFile  string
+		expectError bool
+	}{
+		{
+			name:        "empty string",
+			configFile:  "",
+			expectError: true,
+		},
+		{
+			name:        "whitespace only",
+			configFile:  "   ",
+			expectError: true,
+		},
+		{
+			name:        "valid file path",
+			configFile:  "test.json",
+			expectError: false,
+		},
+		{
+			name:        "file path with whitespace",
+			configFile:  "  test.json  ",
+			expectError: false, // TrimSpace makes this "test.json", which is valid
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &MCPConfig{
+				ConfigFile: tt.configFile,
+				Tools:      []string{},
+			}
+
+			err := config.Validate()
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), errMsgMCPConfigFileEmpty)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestLLMConfigValidateWithWhitespace tests LLM config validation with whitespace
+func TestLLMConfigValidateWithWhitespace(t *testing.T) {
+	tests := []struct {
+		name        string
+		llmConfig   LLMConfig
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "empty type",
+			llmConfig: LLMConfig{
+				Type:    "",
+				BaseURL: "http://test.com",
+				Model:   "test-model",
+			},
+			expectError: true,
+			errorMsg:    errMsgLLMTypeEmpty,
+		},
+		{
+			name: "whitespace type",
+			llmConfig: LLMConfig{
+				Type:    "   ",
+				BaseURL: "http://test.com",
+				Model:   "test-model",
+			},
+			expectError: true,
+			errorMsg:    errMsgLLMTypeEmpty,
+		},
+		{
+			name: "unsupported type",
+			llmConfig: LLMConfig{
+				Type:    "unsupported",
+				BaseURL: "http://test.com",
+				Model:   "test-model",
+			},
+			expectError: true,
+			errorMsg:    "不支持的LLM类型",
+		},
+		{
+			name: "empty base URL",
+			llmConfig: LLMConfig{
+				Type:    LLMProviderOpenAI,
+				BaseURL: "",
+				Model:   "test-model",
+			},
+			expectError: true,
+			errorMsg:    errMsgLLMBaseURLEmpty,
+		},
+		{
+			name: "whitespace base URL",
+			llmConfig: LLMConfig{
+				Type:    LLMProviderOpenAI,
+				BaseURL: "   ",
+				Model:   "test-model",
+			},
+			expectError: true,
+			errorMsg:    errMsgLLMBaseURLEmpty,
+		},
+		{
+			name: "empty model",
+			llmConfig: LLMConfig{
+				Type:    LLMProviderOpenAI,
+				BaseURL: "http://test.com",
+				Model:   "",
+			},
+			expectError: true,
+			errorMsg:    errMsgLLMModelEmpty,
+		},
+		{
+			name: "whitespace model",
+			llmConfig: LLMConfig{
+				Type:    LLMProviderOpenAI,
+				BaseURL: "http://test.com",
+				Model:   "   ",
+			},
+			expectError: true,
+			errorMsg:    errMsgLLMModelEmpty,
+		},
+		{
+			name: "valid openai config",
+			llmConfig: LLMConfig{
+				Type:    LLMProviderOpenAI,
+				BaseURL: "http://test.com",
+				Model:   "gpt-4",
+				APIKey:  "test-key",
+			},
+			expectError: false,
+		},
+		{
+			name: "valid ollama config",
+			llmConfig: LLMConfig{
+				Type:    LLMProviderOllama,
+				BaseURL: "http://localhost:11434",
+				Model:   "llama2",
+				APIKey:  "test-key",
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.llmConfig.Validate()
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestConfigValidateMaxStep tests config validation for MaxStep field
+func TestConfigValidateMaxStep(t *testing.T) {
+	tests := []struct {
+		name        string
+		maxStep     int
+		expectError bool
+	}{
+		{
+			name:        "negative max step",
+			maxStep:     -1,
+			expectError: true,
+		},
+		{
+			name:        "zero max step",
+			maxStep:     0,
+			expectError: true,
+		},
+		{
+			name:        "positive max step",
+			maxStep:     10,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &Config{
+				MCP: MCPConfig{
+					ConfigFile: "test.json",
+					Tools:      []string{},
+				},
+				LLM: LLMConfig{
+					Type:    LLMProviderOllama,
+					BaseURL: "http://localhost:11434",
+					Model:   "test-model",
+					APIKey:  "test-key",
+				},
+				MaxStep: tt.maxStep,
+			}
+
+			err := config.Validate()
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), errMsgMaxStepInvalid)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestCreateHTTPClientWithEmptyProxy tests HTTP client creation with empty proxy
+func TestCreateHTTPClientWithEmptyProxy(t *testing.T) {
+	config := &Config{Proxy: ""}
+
+	client, err := config.createHTTPClient()
+
+	assert.NoError(t, err)
+	assert.Equal(t, http.DefaultClient, client)
+}
+
+// TestCreateHTTPClientWithWhitespaceProxy tests HTTP client creation with whitespace proxy
+func TestCreateHTTPClientWithWhitespaceProxy(t *testing.T) {
+	config := &Config{Proxy: "   "}
+
+	client, err := config.createHTTPClient()
+
+	assert.NoError(t, err)
+	assert.Equal(t, http.DefaultClient, client)
+}
+
+// TestCreateHTTPClientWithInvalidProxy tests HTTP client creation with invalid proxy
+func TestCreateHTTPClientWithInvalidProxy(t *testing.T) {
+	config := &Config{Proxy: "://invalid-proxy"}
+
+	client, err := config.createHTTPClient()
+
+	assert.Error(t, err)
+	assert.Nil(t, client)
+	assert.Contains(t, err.Error(), "解析代理URL错误")
+}
+
+// TestSaveConfigWithEmptyPath tests SaveConfig with empty file path
+func TestSaveConfigWithEmptyPath(t *testing.T) {
+	config := NewDefaultConfig()
+
+	err := config.SaveConfig("")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), errMsgConfigFileEmpty)
+}
+
+// TestSaveConfigWithWhitespacePath tests SaveConfig with whitespace file path
+func TestSaveConfigWithWhitespacePath(t *testing.T) {
+	config := NewDefaultConfig()
+
+	err := config.SaveConfig("   ")
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), errMsgConfigFileEmpty)
+}
+
+// TestSetupViperWithEmptyConfigFile tests setupViper with empty config file
+func TestSetupViperWithEmptyConfigFile(t *testing.T) {
+	err := setupViper("")
+	assert.NoError(t, err)
+}
+
+// TestSetupViperWithWhitespaceConfigFile tests setupViper with whitespace config file
+func TestSetupViperWithWhitespaceConfigFile(t *testing.T) {
+	err := setupViper("   ")
+	assert.NoError(t, err)
+}
+
+// TestSetupViperWithValidConfigFile tests setupViper with valid config file
+func TestSetupViperWithValidConfigFile(t *testing.T) {
+	err := setupViper("test-config.yaml")
+	assert.NoError(t, err)
 }

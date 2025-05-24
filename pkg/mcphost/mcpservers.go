@@ -1,6 +1,13 @@
 // Package mcphost provides MCP (Model Context Protocol) server management functionality.
 // It handles connections to multiple MCP servers, tool discovery, and tool invocation
 // through various transport mechanisms including stdio and SSE.
+//
+// The package supports:
+// - Multiple concurrent MCP server connections
+// - Tool discovery and registration from connected servers
+// - Thread-safe tool invocation
+// - Graceful connection management and cleanup
+// - Both stdio and SSE transport protocols
 package mcphost
 
 import (
@@ -21,19 +28,22 @@ import (
 	"github.com/pkg/errors"
 )
 
-// 常量定义
+// Transport type constants
 const (
 	// TransportTypeSSE represents Server-Sent Events transport
 	TransportTypeSSE = "sse"
 	// TransportTypeStdio represents standard input/output transport
 	TransportTypeStdio = "stdio"
+)
 
-	// 错误消息
+// Error message constants
+const (
 	errMsgUnknownError = "unknown error"
 	errMsgNoContent    = "no content"
 )
 
-// MCPTools represents a collection of tools from an MCP server
+// MCPTools represents a collection of tools from an MCP server.
+// It includes the server name, available tools, and any errors encountered during discovery.
 type MCPTools struct {
 	Name  string     // Server name
 	Tools []mcp.Tool // Available tools
@@ -42,21 +52,25 @@ type MCPTools struct {
 
 // MCPHub manages connections to multiple MCP servers and provides unified tool access.
 // It maintains a pool of connections and provides thread-safe access to tools.
+// The hub automatically discovers tools from connected servers and makes them available
+// through the Eino framework.
 type MCPHub struct {
 	mu          sync.RWMutex                  // Protects concurrent access to connections and tools
-	connections map[string]*Connection        // Active server connections
-	tools       map[string]tool.InvokableTool // Available tools from all servers
-	config      *MCPSettings                  // Configuration settings
+	connections map[string]*Connection        // Active server connections indexed by server name
+	tools       map[string]tool.InvokableTool // Available tools from all servers indexed by tool key
+	config      *MCPSettings                  // Configuration settings for all servers
 }
 
-// Connection represents a connection to a single MCP server
+// Connection represents a connection to a single MCP server.
+// It encapsulates the client instance and its configuration.
 type Connection struct {
-	Client client.MCPClient // MCP client instance
-	Config ServerConfig     // Server configuration
+	Client client.MCPClient // MCP client instance for communication
+	Config ServerConfig     // Server configuration used to establish the connection
 }
 
 // newMCPHub creates a new MCPHub instance with the given settings.
 // It initializes all enabled servers and discovers their tools.
+// This is an internal constructor used by the public factory functions.
 func newMCPHub(ctx context.Context, settings *MCPSettings) (*MCPHub, error) {
 	h := &MCPHub{
 		connections: make(map[string]*Connection),
@@ -64,7 +78,7 @@ func newMCPHub(ctx context.Context, settings *MCPSettings) (*MCPHub, error) {
 		config:      settings,
 	}
 
-	if err := h.initServers(ctx); err != nil {
+	if err := h.initializeServers(ctx); err != nil {
 		return nil, fmt.Errorf("初始化服务器失败: %w", err)
 	}
 
@@ -72,14 +86,15 @@ func newMCPHub(ctx context.Context, settings *MCPSettings) (*MCPHub, error) {
 }
 
 // NewMCPHubFromString creates a new MCPHub from a JSON configuration string.
+// This is useful for programmatic configuration or testing scenarios.
 //
 // Parameters:
-// - ctx: Context for the operation
-// - config: JSON configuration string
+//   - ctx: Context for the operation
+//   - config: JSON configuration string containing MCP server settings
 //
 // Returns:
-// - *MCPHub: Initialized MCPHub instance
-// - error: Error if initialization fails
+//   - *MCPHub: Initialized MCPHub instance
+//   - error: Error if initialization fails
 func NewMCPHubFromString(ctx context.Context, config string) (*MCPHub, error) {
 	settings, err := LoadSettingsFromString(config)
 	if err != nil {
@@ -89,14 +104,15 @@ func NewMCPHubFromString(ctx context.Context, config string) (*MCPHub, error) {
 }
 
 // NewMCPHub creates a new MCPHub from a configuration file.
+// This is the primary way to create an MCPHub instance in production.
 //
 // Parameters:
-// - ctx: Context for the operation
-// - configPath: Path to the configuration file
+//   - ctx: Context for the operation
+//   - configPath: Path to the configuration file
 //
 // Returns:
-// - *MCPHub: Initialized MCPHub instance
-// - error: Error if initialization fails
+//   - *MCPHub: Initialized MCPHub instance
+//   - error: Error if initialization fails
 func NewMCPHub(ctx context.Context, configPath string) (*MCPHub, error) {
 	settings, err := LoadSettings(configPath)
 	if err != nil {
@@ -105,8 +121,9 @@ func NewMCPHub(ctx context.Context, configPath string) (*MCPHub, error) {
 	return newMCPHub(ctx, settings)
 }
 
-// initServers initializes all enabled MCP servers
-func (h *MCPHub) initServers(ctx context.Context) error {
+// initializeServers initializes all enabled MCP servers.
+// It iterates through the configuration and establishes connections to each enabled server.
+func (h *MCPHub) initializeServers(ctx context.Context) error {
 	for name, config := range h.config.MCPServers {
 		if config.Disabled {
 			log.Printf("跳过已禁用的服务器: %s", name)
@@ -125,11 +142,11 @@ func (h *MCPHub) initServers(ctx context.Context) error {
 // It provides thread-safe access to server connections.
 //
 // Parameters:
-// - serverName: Name of the server
+//   - serverName: Name of the server
 //
 // Returns:
-// - client.MCPClient: MCP client for the server
-// - error: Error if server not found or disabled
+//   - client.MCPClient: MCP client for the server
+//   - error: Error if server not found or disabled
 func (h *MCPHub) GetClient(serverName string) (client.MCPClient, error) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -148,6 +165,7 @@ func (h *MCPHub) GetClient(serverName string) (client.MCPClient, error) {
 
 // createToolInvoker creates a tool invocation function for a specific server and tool.
 // This function encapsulates the logic for calling MCP tools and handling responses.
+// It returns a function that can be used by the Eino framework to invoke the tool.
 func createToolInvoker(serverName, toolName string, cli *client.Client) func(ctx context.Context, params map[string]interface{}) (string, error) {
 	return func(ctx context.Context, params map[string]interface{}) (string, error) {
 		req := mcp.CallToolRequest{}
@@ -181,7 +199,7 @@ func createToolInvoker(serverName, toolName string, cli *client.Client) func(ctx
 }
 
 // discoverTools discovers and registers tools from a specific MCP server.
-// It converts MCP tool definitions to Eino tool format.
+// It converts MCP tool definitions to Eino tool format and registers them in the hub.
 func (h *MCPHub) discoverTools(ctx context.Context, serverName string, cli *client.Client) error {
 	listResults, err := cli.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {

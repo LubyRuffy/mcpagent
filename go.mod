@@ -1,4 +1,4 @@
-module github.com/LubyRuffy/mcpagent
+module github.com/LubyRuffy/fofalogsai
 
 go 1.24.2
 
