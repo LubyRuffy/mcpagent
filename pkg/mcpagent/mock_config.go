@@ -57,6 +57,48 @@ func (m *MockToolCallingChatModel) ChatStream(ctx context.Context, messages []*s
 	return args.Get(0).(*schema.StreamReader[*schema.Message]), args.Error(1)
 }
 
+// Generate 模拟 Generate 方法
+func (m *MockToolCallingChatModel) Generate(ctx context.Context, messages []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	args := m.Called(ctx, messages, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*schema.Message), args.Error(1)
+}
+
+// GenerateStream 模拟 GenerateStream 方法
+func (m *MockToolCallingChatModel) GenerateStream(ctx context.Context, messages []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	args := m.Called(ctx, messages, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*schema.StreamReader[*schema.Message]), args.Error(1)
+}
+
+// Stream 模拟 Stream 方法
+func (m *MockToolCallingChatModel) Stream(ctx context.Context, messages []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	args := m.Called(ctx, messages, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*schema.StreamReader[*schema.Message]), args.Error(1)
+}
+
+// WithTools 模拟 WithTools 方法
+func (m *MockToolCallingChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	args := m.Called(tools)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(model.ToolCallingChatModel), args.Error(1)
+}
+
+// Info 模拟 Info 方法
+func (m *MockToolCallingChatModel) Info() interface{} {
+	args := m.Called()
+	return args.Get(0)
+}
+
 // MockBaseTool 是一个模拟的 tool.BaseTool 对象
 type MockBaseTool struct {
 	mock.Mock

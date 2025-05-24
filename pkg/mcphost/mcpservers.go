@@ -260,6 +260,20 @@ func (h *MCPHub) registerTool(serverName string, mcpTool mcp.Tool, cli *client.C
 //   - *openapi3.Schema: Converted OpenAPI v3 schema ready for Eino integration
 //   - error: Error if schema conversion fails
 func (h *MCPHub) convertToolSchema(mcpTool mcp.Tool) (*openapi3.Schema, error) {
+	// fetch mcp 的bug：https://github.com/modelcontextprotocol/servers/issues/1817
+	// 标准中exclusiveMaximum和exclusiveMinimum应该是bool，实际上设置成了integer，导致报错，需要处理
+	for _, v := range mcpTool.InputSchema.Properties {
+		switch values := v.(type) {
+		case map[string]any:
+			if _, ok := values["exclusiveMaximum"]; ok {
+				delete(values, "exclusiveMaximum")
+			}
+			if _, ok := values["exclusiveMinimum"]; ok {
+				delete(values, "exclusiveMinimum")
+			}
+		}
+	}
+
 	marshaledInputSchema, err := sonic.Marshal(mcpTool.InputSchema)
 	if err != nil {
 		return nil, fmt.Errorf("序列化工具输入模式失败: %w", err)
