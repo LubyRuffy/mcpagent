@@ -3,7 +3,7 @@ package mcpagent
 import (
 	"context"
 
-	"github.com/LubyRuffy/fofalogsai/pkg/config"
+	"github.com/LubyRuffy/mcpagent/pkg/config"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"

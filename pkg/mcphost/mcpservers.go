@@ -1,13 +1,31 @@
 // Package mcphost provides MCP (Model Context Protocol) server management functionality.
-// It handles connections to multiple MCP servers, tool discovery, and tool invocation
-// through various transport mechanisms including stdio and SSE.
+// It implements a hub pattern for managing multiple MCP server connections and provides
+// unified tool access through the Eino framework.
 //
-// The package supports:
-// - Multiple concurrent MCP server connections
-// - Tool discovery and registration from connected servers
-// - Thread-safe tool invocation
-// - Graceful connection management and cleanup
-// - Both stdio and SSE transport protocols
+// The package supports both SSE (Server-Sent Events) and stdio transport mechanisms,
+// allowing flexible integration with different types of MCP servers. It handles
+// connection lifecycle, tool discovery, and provides thread-safe access to tools.
+//
+// Example usage:
+//
+//	// Create hub from configuration file
+//	hub, err := NewMCPHub(ctx, "mcpservers.json")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer hub.CloseServers()
+//
+//	// Get available tools
+//	tools, err := hub.GetEinoTools(ctx, []string{"tool1", "tool2"})
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	// Invoke a tool
+//	result, err := hub.InvokeTool(ctx, "tool1", map[string]interface{}{"param": "value"})
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 package mcphost
 
 import (
@@ -231,7 +249,16 @@ func (h *MCPHub) registerTool(serverName string, mcpTool mcp.Tool, cli *client.C
 	return nil
 }
 
-// convertToolSchema converts MCP tool input schema to OpenAPI v3 schema
+// convertToolSchema converts MCP tool input schema to OpenAPI v3 schema.
+// This conversion is necessary for integrating MCP tools with the Eino framework,
+// which expects OpenAPI v3 schema format for tool parameters.
+//
+// Parameters:
+//   - mcpTool: MCP tool definition containing the input schema to convert
+//
+// Returns:
+//   - *openapi3.Schema: Converted OpenAPI v3 schema ready for Eino integration
+//   - error: Error if schema conversion fails
 func (h *MCPHub) convertToolSchema(mcpTool mcp.Tool) (*openapi3.Schema, error) {
 	marshaledInputSchema, err := sonic.Marshal(mcpTool.InputSchema)
 	if err != nil {
@@ -247,7 +274,23 @@ func (h *MCPHub) convertToolSchema(mcpTool mcp.Tool) (*openapi3.Schema, error) {
 }
 
 // connectToServer establishes connection to a single MCP server.
-// It handles different transport types and manages connection lifecycle.
+// It handles different transport types (SSE and stdio) and manages the complete
+// connection lifecycle including initialization, tool discovery, and error handling.
+//
+// The function performs the following steps:
+//  1. Closes any existing connection for the server
+//  2. Creates a new MCP client based on transport configuration
+//  3. Sets up logging for server stderr output
+//  4. Initializes the MCP protocol handshake
+//  5. Discovers and registers available tools
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - serverName: Unique name identifier for the server
+//   - config: Server configuration including transport and connection details
+//
+// Returns:
+//   - error: Error if connection establishment fails at any step
 func (h *MCPHub) connectToServer(ctx context.Context, serverName string, config ServerConfig) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -297,7 +340,15 @@ func (h *MCPHub) connectToServer(ctx context.Context, serverName string, config 
 	return nil
 }
 
-// closeExistingConnection closes an existing connection if it exists
+// closeExistingConnection closes an existing connection if it exists.
+// This function ensures clean connection management by properly closing
+// and removing existing connections before establishing new ones.
+//
+// Parameters:
+//   - serverName: Name of the server whose connection should be closed
+//
+// Returns:
+//   - error: Error if connection closure fails
 func (h *MCPHub) closeExistingConnection(serverName string) error {
 	if existing, exists := h.connections[serverName]; exists {
 		if err := existing.Client.Close(); err != nil {
@@ -308,7 +359,20 @@ func (h *MCPHub) closeExistingConnection(serverName string) error {
 	return nil
 }
 
-// createMCPClient creates an MCP client based on the transport configuration
+// createMCPClient creates an MCP client based on the transport configuration.
+// It supports both SSE (Server-Sent Events) and stdio transport mechanisms,
+// with stdio being the default when no transport type is specified.
+//
+// Transport types:
+//   - SSE: Creates a client that communicates via HTTP Server-Sent Events
+//   - Stdio: Creates a client that communicates via standard input/output
+//
+// Parameters:
+//   - config: Server configuration containing transport type and connection details
+//
+// Returns:
+//   - *client.Client: Configured MCP client ready for initialization
+//   - error: Error if client creation fails or transport type is unsupported
 func (h *MCPHub) createMCPClient(config ServerConfig) (*client.Client, error) {
 	switch config.TransportType {
 	case TransportTypeSSE:
@@ -321,7 +385,15 @@ func (h *MCPHub) createMCPClient(config ServerConfig) (*client.Client, error) {
 	}
 }
 
-// buildEnvironment builds environment variables for stdio transport
+// buildEnvironment builds environment variables for stdio transport.
+// It converts a map of environment variables to the slice format expected
+// by the stdio MCP client, with each entry in "KEY=VALUE" format.
+//
+// Parameters:
+//   - envMap: Map of environment variable names to values
+//
+// Returns:
+//   - []string: Environment variables in "KEY=VALUE" format
 func (h *MCPHub) buildEnvironment(envMap map[string]string) []string {
 	var env []string
 	for k, v := range envMap {
@@ -330,7 +402,15 @@ func (h *MCPHub) buildEnvironment(envMap map[string]string) []string {
 	return env
 }
 
-// setupServerLogging sets up logging for server stderr output
+// setupServerLogging sets up logging for server stderr output.
+// It creates a goroutine to continuously read from the server's stderr
+// and logs the output with the server name prefix for debugging purposes.
+// This is particularly useful for stdio-based MCP servers that may output
+// diagnostic information to stderr.
+//
+// Parameters:
+//   - mcpClient: MCP client instance to get stderr from
+//   - serverName: Server name used as prefix in log messages
 func (h *MCPHub) setupServerLogging(mcpClient *client.Client, serverName string) {
 	stderr, _ := client.GetStderr(mcpClient)
 
@@ -348,10 +428,15 @@ func (h *MCPHub) setupServerLogging(mcpClient *client.Client, serverName string)
 }
 
 // CloseServers closes all server connections gracefully.
-// It should be called when the MCPHub is no longer needed.
+// It should be called when the MCPHub is no longer needed to ensure
+// proper cleanup of resources and connections. The function attempts
+// to close all connections and collects any errors that occur.
+//
+// After closing connections, it clears the internal connection and tool
+// maps to ensure the hub is in a clean state.
 //
 // Returns:
-// - error: Error if any connection fails to close
+//   - error: Aggregated error if any connection fails to close, nil if all succeed
 func (h *MCPHub) CloseServers() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -375,15 +460,20 @@ func (h *MCPHub) CloseServers() error {
 }
 
 // GetEinoTools returns a list of Eino tools based on the provided tool names.
-// If toolNameList is empty, it returns all available tools.
+// If toolNameList is empty, it returns all available tools from all connected servers.
+// This method provides thread-safe access to the tool registry and is the primary
+// way to retrieve tools for use with the Eino framework.
+//
+// The returned tools are ready for use with Eino's agent system and include
+// all necessary metadata and invocation functions.
 //
 // Parameters:
-// - ctx: Context for the operation
-// - toolNameList: List of specific tool names to retrieve (empty for all tools)
+//   - ctx: Context for the operation (currently unused but kept for future extensibility)
+//   - toolNameList: List of specific tool names to retrieve (empty for all tools)
 //
 // Returns:
-// - []tool.BaseTool: List of available tools
-// - error: Error if tool retrieval fails
+//   - []tool.BaseTool: List of available tools ready for Eino integration
+//   - error: Error if any requested tool is not found
 func (h *MCPHub) GetEinoTools(ctx context.Context, toolNameList []string) ([]tool.BaseTool, error) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -411,16 +501,20 @@ func (h *MCPHub) GetEinoTools(ctx context.Context, toolNameList []string) ([]too
 }
 
 // InvokeTool invokes a specific tool with the given arguments.
-// This method provides direct tool invocation without going through the Eino framework.
+// This method provides direct tool invocation without going through the Eino framework,
+// making it useful for simple tool calls or testing scenarios.
+//
+// The function performs thread-safe tool lookup and handles argument serialization
+// automatically. It returns the raw tool output as a string.
 //
 // Parameters:
-// - ctx: Context for the operation
-// - toolName: Name of the tool to invoke
-// - arguments: Arguments to pass to the tool
+//   - ctx: Context for the operation
+//   - toolName: Name of the tool to invoke (must exist in the tool registry)
+//   - arguments: Arguments to pass to the tool as key-value pairs
 //
 // Returns:
-// - string: Tool execution result
-// - error: Error if tool invocation fails
+//   - string: Tool execution result as returned by the MCP server
+//   - error: Error if tool is not found, argument serialization fails, or invocation fails
 func (h *MCPHub) InvokeTool(ctx context.Context, toolName string, arguments map[string]interface{}) (string, error) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

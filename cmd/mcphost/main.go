@@ -20,8 +20,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/LubyRuffy/fofalogsai/pkg/config"
-	"github.com/LubyRuffy/fofalogsai/pkg/mcpagent"
+	"github.com/LubyRuffy/mcpagent/pkg/config"
+	"github.com/LubyRuffy/mcpagent/pkg/mcpagent"
 )
 
 // Exit code constants

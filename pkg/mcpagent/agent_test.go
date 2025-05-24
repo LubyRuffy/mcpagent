@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/LubyRuffy/fofalogsai/pkg/config"
+	"github.com/LubyRuffy/mcpagent/pkg/config"
 	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

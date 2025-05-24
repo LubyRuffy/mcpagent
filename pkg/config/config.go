@@ -39,7 +39,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/LubyRuffy/fofalogsai/pkg/mcphost"
+	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
