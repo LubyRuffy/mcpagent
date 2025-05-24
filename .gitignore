@@ -1,0 +1,8 @@
+config*.yaml
+coverage*
+config.out
+mcpagent.out
+mcphost.out
+mcpservers.json
+.idea
+.vscode
