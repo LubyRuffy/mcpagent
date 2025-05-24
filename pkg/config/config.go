@@ -3,12 +3,30 @@
 // MCP servers, LLM models, proxy settings, and various runtime parameters.
 //
 // The package supports multiple configuration sources:
-// - YAML configuration files
-// - Environment variables (with MCPHOST prefix)
-// - Command-line arguments (via external packages)
+//   - YAML configuration files
+//   - Environment variables (with MCPHOST prefix)
+//   - Command-line arguments (via external packages)
 //
 // Configuration validation ensures all required fields are present and valid
 // before the application starts.
+//
+// Example usage:
+//
+//	cfg, err := config.LoadConfig("config.yaml")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	model, err := cfg.GetModel(ctx)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	tools, cleanup, err := cfg.GetTools(ctx)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer cleanup()
 package config
 
 import (
@@ -29,7 +47,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// LLM provider type constants
+// LLM provider type constants define supported LLM providers
 const (
 	// LLMProviderOpenAI represents OpenAI-compatible LLM provider
 	LLMProviderOpenAI = "openai"
@@ -37,7 +55,7 @@ const (
 	LLMProviderOllama = "ollama"
 )
 
-// Default configuration values
+// Default configuration values provide sensible defaults for the application
 const (
 	defaultConfigName    = "config"
 	defaultConfigType    = "yaml"
@@ -54,7 +72,7 @@ const (
 	envPrefix = "MCPHOST"
 )
 
-// Error messages
+// Error messages provide consistent error reporting
 const (
 	errMsgMCPConfigFileEmpty = "MCP配置文件路径不能为空"
 	errMsgLLMTypeEmpty       = "LLM类型不能为空"
@@ -66,14 +84,18 @@ const (
 )
 
 // MCPHubInterface defines the interface for MCP hub operations.
-// This interface allows for dependency injection during testing.
+// This interface allows for dependency injection during testing and provides
+// a clean abstraction for MCP server management.
 type MCPHubInterface interface {
+	// GetEinoTools retrieves tools from MCP servers and converts them to Eino format
 	GetEinoTools(ctx context.Context, toolNameList []string) ([]tool.BaseTool, error)
+	// CloseServers gracefully closes all MCP server connections
 	CloseServers() error
 }
 
 // mcpHubFactory is a factory function for creating MCPHub instances.
-// This variable allows for dependency injection during testing.
+// This variable allows for dependency injection during testing by replacing
+// the factory function with a mock implementation.
 var mcpHubFactory = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
 	return mcphost.NewMCPHub(ctx, configFile)
 }
@@ -86,8 +108,11 @@ type MCPConfig struct {
 }
 
 // Validate validates the MCP configuration.
-// It ensures that the configuration file path is not empty.
+// It ensures that the configuration file path is not empty after trimming whitespace.
 // Note: File existence is not checked here as it's more appropriate to check at runtime.
+//
+// Returns:
+//   - error: validation error if configuration is invalid, nil otherwise
 func (m *MCPConfig) Validate() error {
 	if strings.TrimSpace(m.ConfigFile) == "" {
 		return errors.New(errMsgMCPConfigFileEmpty)
@@ -106,6 +131,10 @@ type LLMConfig struct {
 
 // Validate validates the LLM configuration.
 // It ensures all required fields are present and the LLM type is supported.
+// All string fields are trimmed of whitespace before validation.
+//
+// Returns:
+//   - error: validation error if configuration is invalid, nil otherwise
 func (l *LLMConfig) Validate() error {
 	if strings.TrimSpace(l.Type) == "" {
 		return errors.New(errMsgLLMTypeEmpty)
@@ -125,6 +154,12 @@ func (l *LLMConfig) Validate() error {
 // Config represents the main application configuration structure.
 // It contains all settings needed to run the FOFA Logs AI application including proxy settings,
 // MCP server configuration, LLM settings, and runtime parameters.
+//
+// The configuration supports multiple sources with the following precedence:
+//  1. Command-line arguments (highest priority)
+//  2. Environment variables
+//  3. Configuration file
+//  4. Default values (lowest priority)
 type Config struct {
 	Proxy        string    `mapstructure:"proxy" json:"proxy" yaml:"proxy"`                         // 代理配置，用于调试查看大模型的请求和响应
 	MCP          MCPConfig `mapstructure:"mcp" json:"mcp" yaml:"mcp"`                               // MCP服务器配置
@@ -134,7 +169,11 @@ type Config struct {
 }
 
 // Validate validates the entire configuration.
-// It performs comprehensive validation of all configuration sections.
+// It performs comprehensive validation of all configuration sections and ensures
+// that all interdependent settings are consistent.
+//
+// Returns:
+//   - error: validation error if any configuration section is invalid, nil otherwise
 func (c *Config) Validate() error {
 	if err := c.MCP.Validate(); err != nil {
 		return fmt.Errorf("MCP配置验证失败: %w", err)
@@ -149,15 +188,18 @@ func (c *Config) Validate() error {
 }
 
 // GetModel creates and returns a configured LLM model instance.
-// It supports both OpenAI-compatible and Ollama providers.
-// The method configures HTTP client with proxy if specified.
+// It supports both OpenAI-compatible and Ollama providers and automatically
+// configures HTTP client with proxy if specified in the configuration.
+//
+// The method handles provider-specific configuration and returns a model
+// that implements the ToolCallingChatModel interface for use with the agent framework.
 //
 // Parameters:
-//   - ctx: Context for the operation
+//   - ctx: Context for the operation, used for cancellation and timeouts
 //
 // Returns:
-//   - model.ToolCallingChatModel: Configured model instance
-//   - error: Error if model creation fails
+//   - model.ToolCallingChatModel: Configured model instance ready for use
+//   - error: Error if model creation fails due to configuration or network issues
 func (c *Config) GetModel(ctx context.Context) (model.ToolCallingChatModel, error) {
 	httpClient, err := c.createHTTPClient()
 	if err != nil {
@@ -175,13 +217,19 @@ func (c *Config) GetModel(ctx context.Context) (model.ToolCallingChatModel, erro
 }
 
 // createHTTPClient creates an HTTP client with optional proxy configuration.
-// If proxy is configured, it creates a client with proxy transport.
+// If proxy is configured and valid, it creates a client with proxy transport.
+// Otherwise, it returns the default HTTP client.
+//
+// Returns:
+//   - *http.Client: HTTP client configured with proxy if specified
+//   - error: Error if proxy URL parsing fails
 func (c *Config) createHTTPClient() (*http.Client, error) {
-	if strings.TrimSpace(c.Proxy) == "" {
+	proxyStr := strings.TrimSpace(c.Proxy)
+	if proxyStr == "" {
 		return http.DefaultClient, nil
 	}
 
-	proxyURL, err := url.Parse(c.Proxy)
+	proxyURL, err := url.Parse(proxyStr)
 	if err != nil {
 		return nil, fmt.Errorf("解析代理URL错误: %w", err)
 	}
@@ -194,6 +242,15 @@ func (c *Config) createHTTPClient() (*http.Client, error) {
 }
 
 // createOpenAIModel creates an OpenAI-compatible model instance.
+// It configures the model with the provided HTTP client and LLM settings.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - httpClient: HTTP client to use for API requests
+//
+// Returns:
+//   - model.ToolCallingChatModel: Configured OpenAI model
+//   - error: Error if model creation fails
 func (c *Config) createOpenAIModel(ctx context.Context, httpClient *http.Client) (model.ToolCallingChatModel, error) {
 	return openai.NewChatModel(ctx, &openai.ChatModelConfig{
 		BaseURL:    c.LLM.BaseURL,
@@ -204,6 +261,15 @@ func (c *Config) createOpenAIModel(ctx context.Context, httpClient *http.Client)
 }
 
 // createOllamaModel creates an Ollama model instance.
+// It configures the model with the provided HTTP client and LLM settings.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - httpClient: HTTP client to use for API requests
+//
+// Returns:
+//   - model.ToolCallingChatModel: Configured Ollama model
+//   - error: Error if model creation fails
 func (c *Config) createOllamaModel(ctx context.Context, httpClient *http.Client) (model.ToolCallingChatModel, error) {
 	return ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL:    c.LLM.BaseURL,
@@ -213,16 +279,27 @@ func (c *Config) createOllamaModel(ctx context.Context, httpClient *http.Client)
 }
 
 // GetTools connects to MCP servers and retrieves the configured tools.
-// It returns the tools along with a cleanup function that should be called
-// when the tools are no longer needed.
+// It establishes connections to all configured MCP servers, discovers available tools,
+// and returns them in a format compatible with the Eino framework.
+//
+// The method returns a cleanup function that MUST be called when the tools are no longer
+// needed to properly close MCP server connections and free resources.
 //
 // Parameters:
-//   - ctx: Context for the operation
+//   - ctx: Context for the operation, used for cancellation and timeouts
 //
 // Returns:
-//   - []tool.BaseTool: List of available tools
-//   - func(): Cleanup function to close MCP connections
+//   - []tool.BaseTool: List of available tools from all connected MCP servers
+//   - func(): Cleanup function to close MCP connections (must be called)
 //   - error: Error if tool retrieval fails
+//
+// Example:
+//
+//	tools, cleanup, err := cfg.GetTools(ctx)
+//	if err != nil {
+//		return err
+//	}
+//	defer cleanup() // Important: always call cleanup
 func (c *Config) GetTools(ctx context.Context) ([]tool.BaseTool, func(), error) {
 	// 连接mcp服务器
 	mcpHub, err := mcpHubFactory(ctx, c.MCP.ConfigFile)
@@ -247,13 +324,14 @@ func (c *Config) GetTools(ctx context.Context) ([]tool.BaseTool, func(), error) 
 }
 
 // SaveConfig saves the current configuration to the specified file.
-// It uses viper to serialize the configuration to YAML format.
+// It uses viper to serialize the configuration to YAML format with proper formatting.
+// The configuration is validated before saving to ensure consistency.
 //
 // Parameters:
-//   - configFile: Path to the configuration file to save
+//   - configFile: Path to the configuration file to save (must not be empty)
 //
 // Returns:
-//   - error: Error if saving fails
+//   - error: Error if saving fails due to validation, file system issues, or serialization problems
 func (c *Config) SaveConfig(configFile string) error {
 	if strings.TrimSpace(configFile) == "" {
 		return errors.New(errMsgConfigFileEmpty)
@@ -270,6 +348,7 @@ func (c *Config) SaveConfig(configFile string) error {
 }
 
 // setViperValues sets configuration values in viper for serialization.
+// This method maps the configuration struct fields to viper keys for proper YAML output.
 func (c *Config) setViperValues() {
 	viper.Set("proxy", c.Proxy)
 	viper.Set("mcp.config_file", c.MCP.ConfigFile)
@@ -285,6 +364,16 @@ func (c *Config) setViperValues() {
 // NewDefaultConfig returns a default configuration with sensible defaults.
 // This function creates a configuration that can be used as a starting point
 // or fallback when no configuration file is available.
+//
+// The default configuration uses:
+//   - Ollama as the LLM provider (localhost:11434)
+//   - qwen3:4b as the default model
+//   - mcpservers.json as the MCP configuration file
+//   - 20 as the maximum reasoning steps
+//   - A Chinese system prompt for information gathering
+//
+// Returns:
+//   - *Config: Default configuration ready for use or customization
 func NewDefaultConfig() *Config {
 	return &Config{
 		Proxy: "",
@@ -306,16 +395,28 @@ func NewDefaultConfig() *Config {
 // LoadConfig loads configuration from file or creates default configuration.
 // It supports both specified config file path and automatic discovery of config files.
 // The function follows this priority order:
-// 1. Specified config file
-// 2. Environment variables
-// 3. Default configuration
+//  1. Specified config file (if provided)
+//  2. Automatic config file discovery in standard locations
+//  3. Environment variables (with MCPHOST prefix)
+//  4. Default configuration values
+//
+// The function is resilient to missing configuration files and will use defaults
+// when files are not found, but will return errors for invalid configurations.
 //
 // Parameters:
 //   - configFile: Path to configuration file. If empty, will search for config file automatically
 //
 // Returns:
-//   - *Config: Loaded configuration
-//   - error: Error if loading fails
+//   - *Config: Loaded and validated configuration
+//   - error: Error if loading fails due to parsing or validation issues
+//
+// Example:
+//
+//	// Load from specific file
+//	cfg, err := LoadConfig("myconfig.yaml")
+//
+//	// Auto-discover config file
+//	cfg, err := LoadConfig("")
 func LoadConfig(configFile string) (*Config, error) {
 	config := NewDefaultConfig()
 
@@ -341,10 +442,18 @@ func LoadConfig(configFile string) (*Config, error) {
 }
 
 // setupViper configures viper for config file reading.
-// It sets up file paths, environment variable handling, and other viper settings.
+// It sets up file paths, environment variable handling, and other viper settings
+// based on whether a specific config file is provided or auto-discovery is needed.
+//
+// Parameters:
+//   - configFile: Specific config file path, or empty for auto-discovery
+//
+// Returns:
+//   - error: Error if viper setup fails
 func setupViper(configFile string) error {
-	if strings.TrimSpace(configFile) != "" {
-		viper.SetConfigFile(configFile)
+	configFileStr := strings.TrimSpace(configFile)
+	if configFileStr != "" {
+		viper.SetConfigFile(configFileStr)
 	} else {
 		viper.SetConfigName(defaultConfigName)
 		viper.SetConfigType(defaultConfigType)
@@ -363,10 +472,14 @@ func setupViper(configFile string) error {
 }
 
 // readConfigFile attempts to read the configuration file.
-// It handles common file reading errors gracefully.
+// It handles common file reading errors gracefully and distinguishes between
+// missing files (which is acceptable) and actual parsing errors.
+//
+// Returns:
+//   - error: Error if file reading fails for reasons other than file not found
 func readConfigFile() error {
 	if err := viper.ReadInConfig(); err != nil {
-		// 如果找不到配置文件，返回错误
+		// 如果找不到配置文件，返回错误但不是致命错误
 		var configFileNotFoundError viper.ConfigFileNotFoundError
 		var pathError *fs.PathError
 		if !errors.As(err, &configFileNotFoundError) && !errors.As(err, &pathError) {

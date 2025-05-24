@@ -28,14 +28,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Transport type constants
-const (
-	// TransportTypeSSE represents Server-Sent Events transport
-	TransportTypeSSE = "sse"
-	// TransportTypeStdio represents standard input/output transport
-	TransportTypeStdio = "stdio"
-)
-
 // Error message constants
 const (
 	errMsgUnknownError = "unknown error"

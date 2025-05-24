@@ -2,11 +2,19 @@
 // for executing tasks with tool calling capabilities and notification support.
 //
 // The package implements a ReAct (Reasoning and Acting) agent that can:
-// - Execute complex tasks using available MCP tools
-// - Provide real-time notifications during execution
-// - Handle streaming responses and tool calls
-// - Support multiple LLM providers (OpenAI, Ollama)
-// - Manage tool execution lifecycle with proper cleanup
+//   - Execute complex tasks using available MCP tools
+//   - Provide real-time notifications during execution
+//   - Handle streaming responses and tool calls
+//   - Support multiple LLM providers (OpenAI, Ollama)
+//   - Manage tool execution lifecycle with proper cleanup
+//
+// Example usage:
+//
+//	notify := &mcpagent.CliNotifier{}
+//	err := mcpagent.Run(ctx, cfg, "分析这个网站的安全性", notify)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
 package mcpagent
 
 import (
@@ -30,7 +38,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// Tool name constants for special handling
+// Tool name constants for special handling of specific tools
 const (
 	// ToolSequentialThinking represents the sequential thinking tool name
 	ToolSequentialThinking = "sequentialthinking"
@@ -40,19 +48,19 @@ const (
 	ToolURLMarkdown = "url_markdown"
 )
 
-// Field name constants for tool arguments
+// Field name constants for tool arguments parsing
 const (
 	// ThinkFieldName represents the think field name in tool arguments
 	ThinkFieldName = "think"
 )
 
-// Message constants
+// Message constants for user notifications
 const (
 	// ToolCallingPrefix represents the prefix for tool calling messages
 	ToolCallingPrefix = "正在调用工具："
 )
 
-// Error message constants
+// Error message constants provide consistent error reporting
 const (
 	errMsgConfigNil         = "配置不能为空"
 	errMsgTaskEmpty         = "任务不能为空"
@@ -71,12 +79,22 @@ const (
 // Notify defines the interface for handling various types of notifications
 // during agent execution. Implementations should handle these notifications
 // appropriately for their context (CLI, web UI, etc.).
+//
+// The interface provides three types of notifications:
+//   - OnMessage: For progress updates and informational messages
+//   - OnResult: For final results when the agent completes successfully
+//   - OnError: For error notifications when something goes wrong
 type Notify interface {
 	// OnMessage sends a message notification during execution
+	// This is typically used for progress updates and informational messages
 	OnMessage(msg string)
+
 	// OnResult sends a result notification when the agent completes successfully
+	// This contains the final output from the agent
 	OnResult(msg string)
+
 	// OnError sends an error notification when something goes wrong
+	// This should be used for all error conditions during execution
 	OnError(err error)
 }
 
@@ -87,8 +105,11 @@ type Notify interface {
 // The callback processes tool calls and extracts relevant information for
 // user notification, particularly handling special tools like sequential thinking
 // and web-related operations.
+//
+// This callback is designed to be thread-safe and can handle concurrent
+// operations from the agent framework.
 type LoggerCallback struct {
-	notify                   Notify // Notification handler
+	notify                   Notify // Notification handler for user feedback
 	callbacks.HandlerBuilder        // Embedded handler builder for callback implementation
 }
 
@@ -96,6 +117,17 @@ type LoggerCallback struct {
 // and sends appropriate notifications based on the tool type.
 // This method is particularly important for providing real-time feedback
 // during tool execution.
+//
+// The method filters messages to only process assistant messages with tool calls,
+// ensuring that only relevant tool execution events trigger notifications.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - info: Runtime information about the callback
+//   - input: Input data for the callback (expected to be a schema.Message)
+//
+// Returns:
+//   - context.Context: The same context (no modifications)
 func (cb *LoggerCallback) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	message, ok := input.(*schema.Message)
 	if !ok {
@@ -111,7 +143,11 @@ func (cb *LoggerCallback) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 }
 
 // processToolCalls processes the tool calls and sends appropriate notifications.
-// It handles each tool call individually and logs any errors that occur.
+// It handles each tool call individually and logs any errors that occur during processing.
+// This method ensures that errors in processing one tool call don't affect others.
+//
+// Parameters:
+//   - toolCalls: List of tool calls to process
 func (cb *LoggerCallback) processToolCalls(toolCalls []schema.ToolCall) {
 	for _, toolCall := range toolCalls {
 		if err := cb.handleSingleToolCall(toolCall); err != nil {
@@ -123,6 +159,13 @@ func (cb *LoggerCallback) processToolCalls(toolCalls []schema.ToolCall) {
 
 // handleSingleToolCall processes a single tool call and extracts relevant information.
 // It parses the tool arguments and delegates to specific handlers based on tool type.
+// This method provides the main logic for interpreting different types of tool calls.
+//
+// Parameters:
+//   - toolCall: The tool call to process
+//
+// Returns:
+//   - error: Error if processing fails
 func (cb *LoggerCallback) handleSingleToolCall(toolCall schema.ToolCall) error {
 	arguments, err := cb.parseToolArguments(toolCall.Function.Arguments)
 	if err != nil {
@@ -142,14 +185,23 @@ func (cb *LoggerCallback) handleSingleToolCall(toolCall schema.ToolCall) error {
 }
 
 // parseToolArguments parses the JSON arguments of a tool call.
-// It converts the JSON string to a map for easier processing.
+// It converts the JSON string to a map for easier processing and handles
+// empty or malformed JSON gracefully.
+//
+// Parameters:
+//   - arguments: JSON string containing tool arguments
+//
+// Returns:
+//   - map[string]interface{}: Parsed arguments as a map
+//   - error: Error if JSON parsing fails
 func (cb *LoggerCallback) parseToolArguments(arguments string) (map[string]interface{}, error) {
-	if strings.TrimSpace(arguments) == "" {
+	argStr := strings.TrimSpace(arguments)
+	if argStr == "" {
 		return make(map[string]interface{}), nil
 	}
 
 	var parsedArgs map[string]interface{}
-	if err := json.Unmarshal([]byte(arguments), &parsedArgs); err != nil {
+	if err := json.Unmarshal([]byte(argStr), &parsedArgs); err != nil {
 		return nil, err
 	}
 	return parsedArgs, nil
@@ -157,6 +209,10 @@ func (cb *LoggerCallback) parseToolArguments(arguments string) (map[string]inter
 
 // handleThinkingTool handles the sequential thinking tool.
 // It extracts the thinking content and sends it as a notification.
+// This tool is special because it represents the agent's reasoning process.
+//
+// Parameters:
+//   - arguments: Parsed tool arguments containing thinking content
 func (cb *LoggerCallback) handleThinkingTool(arguments map[string]interface{}) {
 	if thinkValue, exists := arguments[ThinkFieldName]; exists {
 		if thinkStr, ok := thinkValue.(string); ok && strings.TrimSpace(thinkStr) != "" {
@@ -167,33 +223,73 @@ func (cb *LoggerCallback) handleThinkingTool(arguments map[string]interface{}) {
 
 // handleWebTool handles web-related tools (search, markdown).
 // It extracts thinking content if present and notifies about tool execution.
+// These tools often include reasoning about why they're being used.
+//
+// Parameters:
+//   - toolName: Name of the web tool being executed
+//   - arguments: Parsed tool arguments
 func (cb *LoggerCallback) handleWebTool(toolName string, arguments map[string]interface{}) {
+	// First, handle any thinking content
 	if thinkValue, exists := arguments[ThinkFieldName]; exists {
 		if thinkStr, ok := thinkValue.(string); ok && strings.TrimSpace(thinkStr) != "" {
 			cb.notify.OnMessage(thinkStr)
 		}
 	}
+	// Then notify about the tool execution
 	cb.notify.OnMessage(ToolCallingPrefix + toolName)
 }
 
-// handleGenericTool handles all other tools with a generic approach
+// handleGenericTool handles all other tools with a generic approach.
+// It provides basic notification about tool execution with arguments.
+//
+// Parameters:
+//   - toolName: Name of the tool being executed
+//   - arguments: Raw JSON arguments string
 func (cb *LoggerCallback) handleGenericTool(toolName, arguments string) {
 	cb.notify.OnMessage(fmt.Sprintf("%s %s", toolName, arguments))
 }
 
-// OnEnd is called when a callback operation ends successfully
+// OnEnd is called when a callback operation ends successfully.
+// Currently no specific handling is needed for successful completion.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - info: Runtime information about the callback
+//   - output: Output data from the callback
+//
+// Returns:
+//   - context.Context: The same context (no modifications)
 func (cb *LoggerCallback) OnEnd(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
 	// Currently no specific handling needed for OnEnd
 	return ctx
 }
 
-// OnError is called when a callback operation encounters an error
+// OnError is called when a callback operation encounters an error.
+// It forwards the error to the notification handler for user feedback.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - info: Runtime information about the callback
+//   - err: The error that occurred
+//
+// Returns:
+//   - context.Context: The same context (no modifications)
 func (cb *LoggerCallback) OnError(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
 	cb.notify.OnError(err)
 	return ctx
 }
 
-// OnEndWithStreamOutput handles the end of streaming output operations
+// OnEndWithStreamOutput handles the end of streaming output operations.
+// It processes streaming output in a separate goroutine to avoid blocking
+// the main execution flow.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - info: Runtime information about the callback
+//   - output: Stream reader for callback output
+//
+// Returns:
+//   - context.Context: The same context (no modifications)
 func (cb *LoggerCallback) OnEndWithStreamOutput(ctx context.Context, info *callbacks.RunInfo,
 	output *schema.StreamReader[callbacks.CallbackOutput]) context.Context {
 
@@ -201,7 +297,13 @@ func (cb *LoggerCallback) OnEndWithStreamOutput(ctx context.Context, info *callb
 	return ctx
 }
 
-// handleStreamOutput processes streaming output in a separate goroutine
+// handleStreamOutput processes streaming output in a separate goroutine.
+// It reads from the stream until EOF and processes each frame.
+// The method includes panic recovery to ensure stability.
+//
+// Parameters:
+//   - info: Runtime information about the callback
+//   - output: Stream reader for callback output
 func (cb *LoggerCallback) handleStreamOutput(info *callbacks.RunInfo, output *schema.StreamReader[callbacks.CallbackOutput]) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -227,7 +329,16 @@ func (cb *LoggerCallback) handleStreamOutput(info *callbacks.RunInfo, output *sc
 	}
 }
 
-// processStreamFrame processes a single frame from the stream output
+// processStreamFrame processes a single frame from the stream output.
+// It serializes the frame and logs it if it's from the main graph.
+// This helps with debugging and monitoring agent execution.
+//
+// Parameters:
+//   - info: Runtime information about the callback
+//   - frame: The stream frame to process
+//
+// Returns:
+//   - error: Error if frame processing fails
 func (cb *LoggerCallback) processStreamFrame(info *callbacks.RunInfo, frame callbacks.CallbackOutput) error {
 	frameData, err := json.Marshal(frame)
 	if err != nil {
@@ -242,29 +353,50 @@ func (cb *LoggerCallback) processStreamFrame(info *callbacks.RunInfo, frame call
 	return nil
 }
 
-// OnStartWithStreamInput handles the start of streaming input operations
+// OnStartWithStreamInput handles the start of streaming input operations.
+// It ensures proper cleanup of the input stream.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - info: Runtime information about the callback
+//   - input: Stream reader for callback input
+//
+// Returns:
+//   - context.Context: The same context (no modifications)
 func (cb *LoggerCallback) OnStartWithStreamInput(ctx context.Context, info *callbacks.RunInfo,
 	input *schema.StreamReader[callbacks.CallbackInput]) context.Context {
 	defer input.Close()
 	return ctx
 }
 
-// Run 运行MCP Agent
+// Run executes an MCP Agent task with the provided configuration and notification handler.
 //
-// 该函数是主要的入口点，用于设置和执行MCP Agent任务。它会：
-// 1. 验证输入参数
-// 2. 获取配置的工具和模型
-// 3. 创建并配置ReAct Agent
-// 4. 执行任务并处理结果
+// This function is the main entry point for executing agent tasks. It orchestrates
+// the entire process including:
+//  1. Input parameter validation
+//  2. Tool and model initialization
+//  3. Agent creation and configuration
+//  4. Task execution with proper error handling
 //
-// 参数:
-// - ctx: 上下文，用于控制执行流程和传递元数据
-// - cfg: 配置对象，包含模型、工具和系统提示等配置信息
-// - task: 要执行的任务描述
-// - notify: 通知处理器，用于接收执行过程中的各种通知
+// The function ensures proper resource cleanup and provides comprehensive error
+// reporting through the notification interface.
 //
-// 返回:
-// - error: 如果执行过程中出现错误则返回错误信息
+// Parameters:
+//   - ctx: Context for controlling execution flow and cancellation
+//   - cfg: Configuration containing model, tool, and system settings
+//   - task: Task description to execute (must not be empty)
+//   - notify: Notification handler for progress updates and results
+//
+// Returns:
+//   - error: Error if execution fails at any stage
+//
+// Example:
+//
+//	notify := &mcpagent.CliNotifier{}
+//	err := mcpagent.Run(ctx, cfg, "分析这个网站的安全性", notify)
+//	if err != nil {
+//		log.Printf("任务执行失败: %v", err)
+//	}
 func Run(ctx context.Context, cfg *config.Config, task string, notify Notify) error {
 	// 输入参数验证
 	if err := validateRunParameters(cfg, task, notify); err != nil {
@@ -294,12 +426,21 @@ func Run(ctx context.Context, cfg *config.Config, task string, notify Notify) er
 	return executeAgentTask(ctx, cfg, ragent, task, notify)
 }
 
-// validateRunParameters 验证Run函数的输入参数
+// validateRunParameters validates the input parameters for the Run function.
+// It ensures all required parameters are provided and not nil/empty.
+//
+// Parameters:
+//   - cfg: Configuration to validate
+//   - task: Task string to validate
+//   - notify: Notification handler to validate
+//
+// Returns:
+//   - error: Validation error if any parameter is invalid
 func validateRunParameters(cfg *config.Config, task string, notify Notify) error {
 	if cfg == nil {
 		return errors.New(errMsgConfigNil)
 	}
-	if task == "" {
+	if strings.TrimSpace(task) == "" {
 		return errors.New(errMsgTaskEmpty)
 	}
 	if notify == nil {
@@ -308,7 +449,22 @@ func validateRunParameters(cfg *config.Config, task string, notify Notify) error
 	return nil
 }
 
-// createReActAgent 创建并配置ReAct agent
+// createReActAgent creates and configures a ReAct agent with the provided tools and model.
+// It sets up the agent with appropriate configuration including maximum steps
+// and tool integration.
+//
+// The agent is configured with a step multiplier to allow for complex reasoning
+// that may require multiple iterations.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - cfg: Configuration containing agent settings
+//   - einoTools: List of tools available to the agent
+//   - chatModel: Chat model for the agent to use
+//
+// Returns:
+//   - *react.Agent: Configured ReAct agent ready for task execution
+//   - error: Error if agent creation fails
 func createReActAgent(ctx context.Context, cfg *config.Config, einoTools []tool.BaseTool, chatModel model.ToolCallingChatModel) (*react.Agent, error) {
 	tools := compose.ToolsNodeConfig{
 		Tools: einoTools,
@@ -317,13 +473,28 @@ func createReActAgent(ctx context.Context, cfg *config.Config, einoTools []tool.
 	agentConfig := &react.AgentConfig{
 		ToolCallingModel: chatModel,
 		ToolsConfig:      tools,
-		MaxStep:          cfg.MaxStep * 5,
+		MaxStep:          cfg.MaxStep * 5, // Allow more steps for complex reasoning
 	}
 
 	return react.NewAgent(ctx, agentConfig)
 }
 
-// executeAgentTask 执行具体的agent任务
+// executeAgentTask executes the specific agent task with proper message formatting
+// and callback handling. It creates the chat template, formats the system prompt,
+// and manages the agent execution lifecycle.
+//
+// The function handles template variable substitution including current date
+// and configuration parameters.
+//
+// Parameters:
+//   - ctx: Context for the operation
+//   - cfg: Configuration containing system prompt and other settings
+//   - ragent: Configured ReAct agent to execute the task
+//   - task: Task description to execute
+//   - notify: Notification handler for results
+//
+// Returns:
+//   - error: Error if task execution fails
 func executeAgentTask(ctx context.Context, cfg *config.Config, ragent *react.Agent, task string, notify Notify) error {
 	// 创建聊天模板
 	chatTemplate := prompt.FromMessages(schema.FString,
