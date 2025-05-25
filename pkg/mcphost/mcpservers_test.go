@@ -61,7 +61,7 @@ func TestLoadSettings(t *testing.T) {
 				Command:       "test_command1",
 				Args:          []string{"arg1", "arg2"},
 				Env:           map[string]string{"ENV1": "value1"},
-				Disabled:      false,
+				Disabled:      true,
 			},
 			"server2": {
 				TransportType: "sse",
@@ -91,7 +91,7 @@ func TestLoadSettings(t *testing.T) {
 	assert.Equal(t, "test_command1", server1.Command)
 	assert.Equal(t, []string{"arg1", "arg2"}, server1.Args)
 	assert.Equal(t, map[string]string{"ENV1": "value1"}, server1.Env)
-	assert.False(t, server1.Disabled)
+	assert.True(t, server1.Disabled)
 
 	// 验证server2配置
 	server2, exists := loadedConfig.MCPServers["server2"]
