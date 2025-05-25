@@ -1,7 +1,6 @@
 # MCPAgent
 
 [![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://golang.org/)
-[![Test Coverage](https://img.shields.io/badge/Coverage-66.1%25-yellow.svg)](./TEST_COVERAGE_REPORT.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 MCPAgent 是一个基于 Model Context Protocol (MCP) 的智能代理框架，支持多种大语言模型和工具集成，专为测试单体agent的效果而设计。
