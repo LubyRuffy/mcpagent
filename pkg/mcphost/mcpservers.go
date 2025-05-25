@@ -33,6 +33,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"sync"
 
@@ -448,7 +449,7 @@ func (h *MCPHub) setupServerLogging(mcpClient *client.Client, serverName string)
 			for scanner.Scan() {
 				log.Printf("[%s] %s", serverName, scanner.Text())
 			}
-			if err := scanner.Err(); err != nil {
+			if err := scanner.Err(); err != nil && errors.Is(err, io.EOF) {
 				log.Printf("读取服务器 %s 的stderr时出错: %v", serverName, err)
 			}
 		}()

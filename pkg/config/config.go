@@ -180,6 +180,7 @@ type Config struct {
 	LLM          LLMConfig `mapstructure:"llm" json:"llm" yaml:"llm"`                               // 大模型配置
 	SystemPrompt string    `mapstructure:"system_prompt" json:"system_prompt" yaml:"system_prompt"` // 系统提示词
 	MaxStep      int       `mapstructure:"max_step" json:"max_step" yaml:"max_step"`                // 最大思考步骤数
+	Field        string    `mapstructure:"field" json:"field" yaml:"field"`                         // 领域
 }
 
 // Validate validates the entire configuration.
@@ -390,6 +391,7 @@ func (c *Config) setViperValues() {
 	viper.Set("llm.api_key", c.LLM.APIKey)
 	viper.Set("system_prompt", c.SystemPrompt)
 	viper.Set("max_step", c.MaxStep)
+	viper.Set("field", c.Field)
 }
 
 // NewDefaultConfig returns a default configuration with sensible defaults.
@@ -419,6 +421,7 @@ func NewDefaultConfig() *Config {
 		},
 		SystemPrompt: defaultSystemPrompt,
 		MaxStep:      defaultMaxStep,
+		Field:        "",
 	}
 }
 

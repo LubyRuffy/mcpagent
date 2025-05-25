@@ -511,6 +511,7 @@ func executeAgentTask(ctx context.Context, cfg *config.Config, ragent *react.Age
 	msg, err := chatTemplate.Format(ctx, map[string]interface{}{
 		"date":           time.Now().Format("2006-01-02"),
 		"total_thoughts": cfg.MaxStep,
+		"field":          cfg.Field,
 	})
 	if err != nil {
 		return fmt.Errorf(errMsgFormatMsgFailed, err)
