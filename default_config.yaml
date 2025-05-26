@@ -24,7 +24,9 @@ mcp:
     - ddg-search_search
     - sequential-thinking_sequentialthinking
 proxy: ""
-field: "网络安全研究领域"
+placeholders:
+  field: "网络安全研究领域"
+  total_thoughts: 20
 system_prompt: |
   # 学术研究写作系统提示词
 

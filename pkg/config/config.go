@@ -175,12 +175,12 @@ func (l *LLMConfig) Validate() error {
 //  3. Configuration file
 //  4. Default values (lowest priority)
 type Config struct {
-	Proxy        string    `mapstructure:"proxy" json:"proxy" yaml:"proxy"`                         // 代理配置，用于调试查看大模型的请求和响应
-	MCP          MCPConfig `mapstructure:"mcp" json:"mcp" yaml:"mcp"`                               // MCP服务器配置
-	LLM          LLMConfig `mapstructure:"llm" json:"llm" yaml:"llm"`                               // 大模型配置
-	SystemPrompt string    `mapstructure:"system_prompt" json:"system_prompt" yaml:"system_prompt"` // 系统提示词
-	MaxStep      int       `mapstructure:"max_step" json:"max_step" yaml:"max_step"`                // 最大思考步骤数
-	Field        string    `mapstructure:"field" json:"field" yaml:"field"`                         // 领域
+	Proxy        string         `mapstructure:"proxy" json:"proxy" yaml:"proxy"`                         // 代理配置，用于调试查看大模型的请求和响应
+	MCP          MCPConfig      `mapstructure:"mcp" json:"mcp" yaml:"mcp"`                               // MCP服务器配置
+	LLM          LLMConfig      `mapstructure:"llm" json:"llm" yaml:"llm"`                               // 大模型配置
+	SystemPrompt string         `mapstructure:"system_prompt" json:"system_prompt" yaml:"system_prompt"` // 系统提示词
+	MaxStep      int            `mapstructure:"max_step" json:"max_step" yaml:"max_step"`                // 领域
+	PlaceHolders map[string]any `mapstructure:"placeholders" json:"placeholders" yaml:"placeholders"`    // 占位符
 }
 
 // Validate validates the entire configuration.
@@ -391,7 +391,7 @@ func (c *Config) setViperValues() {
 	viper.Set("llm.api_key", c.LLM.APIKey)
 	viper.Set("system_prompt", c.SystemPrompt)
 	viper.Set("max_step", c.MaxStep)
-	viper.Set("field", c.Field)
+	viper.Set("placeholders", c.PlaceHolders)
 }
 
 // NewDefaultConfig returns a default configuration with sensible defaults.
@@ -421,7 +421,7 @@ func NewDefaultConfig() *Config {
 		},
 		SystemPrompt: defaultSystemPrompt,
 		MaxStep:      defaultMaxStep,
-		Field:        "",
+		PlaceHolders: map[string]any{},
 	}
 }
 

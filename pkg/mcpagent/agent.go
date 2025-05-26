@@ -492,11 +492,14 @@ func executeAgentTask(ctx context.Context, cfg *config.Config, ragent *react.Age
 		})
 
 	// 格式化消息
-	msg, err := chatTemplate.Format(ctx, map[string]interface{}{
-		"date":           time.Now().Format("2006-01-02"),
-		"total_thoughts": cfg.MaxStep,
-		"field":          cfg.Field,
-	})
+	placeHolders := map[string]any{
+		"date": time.Now().Format("2006-01-02"),
+	}
+	for k, v := range cfg.PlaceHolders {
+		placeHolders[k] = v
+	}
+
+	msg, err := chatTemplate.Format(ctx, placeHolders)
 	if err != nil {
 		return fmt.Errorf(errMsgFormatMsgFailed, err)
 	}

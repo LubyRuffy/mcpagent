@@ -60,7 +60,6 @@ type CommandLineArgs struct {
 	SystemPrompt  *string // System prompt for the agent
 	MaxStep       *int    // Maximum number of reasoning steps
 	Task          *string // Task description to execute
-	Field         *string // Field for system prompt's {field} placeholder
 }
 
 // fatalError handles fatal errors by logging and exiting with error code.
@@ -86,7 +85,6 @@ func parseCommandLineArgs() *CommandLineArgs {
 		SystemPrompt:  flag.String("system-prompt", "", "系统提示词"),
 		MaxStep:       flag.Int("max-step", 0, "最大步骤数"),
 		Task:          flag.String("task", "", "要执行的任务"),
-		Field:         flag.String("field", "", "领域，用于系统提示词的占位符"),
 	}
 
 	flag.Parse()
@@ -144,9 +142,6 @@ func mergeCommandLineArgs(cfg *config.Config, args *CommandLineArgs) {
 	}
 	if *args.MaxStep != 0 {
 		cfg.MaxStep = *args.MaxStep
-	}
-	if strings.TrimSpace(*args.Field) != "" {
-		cfg.Field = *args.Field
 	}
 }
 
