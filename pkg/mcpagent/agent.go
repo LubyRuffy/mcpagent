@@ -49,15 +49,9 @@ const (
 )
 
 // Field name constants for tool arguments parsing
-const (
+var (
 	// ThinkFieldName represents the think field name in tool arguments
-	ThinkFieldName = "think"
-)
-
-// Message constants for user notifications
-const (
-	// ToolCallingPrefix represents the prefix for tool calling messages
-	ToolCallingPrefix = "正在调用工具："
+	ThinkFieldName = []string{"think", "thought"}
 )
 
 // Error message constants provide consistent error reporting
@@ -82,12 +76,20 @@ const (
 //
 // The interface provides three types of notifications:
 //   - OnMessage: For progress updates and informational messages
+//   - OnThinking: For progress updates and informational messages
+//   - OnToolCall: For tool calls
 //   - OnResult: For final results when the agent completes successfully
 //   - OnError: For error notifications when something goes wrong
 type Notify interface {
 	// OnMessage sends a message notification during execution
 	// This is typically used for progress updates and informational messages
 	OnMessage(msg string)
+
+	// OnThinking sends a thinking notification during execution
+	OnThinking(msg string)
+
+	// OnToolCall sends a tool call notification during execution
+	OnToolCall(toolName string, params any)
 
 	// OnResult sends a result notification when the agent completes successfully
 	// This contains the final output from the agent
@@ -172,14 +174,7 @@ func (cb *LoggerCallback) handleSingleToolCall(toolCall schema.ToolCall) error {
 		return fmt.Errorf(errMsgParseArgsFailed, err)
 	}
 
-	switch toolCall.Function.Name {
-	case ToolSequentialThinking:
-		cb.handleThinkingTool(arguments)
-	case ToolWebSearch, ToolURLMarkdown:
-		cb.handleWebTool(toolCall.Function.Name, arguments)
-	default:
-		cb.handleGenericTool(toolCall.Function.Name, toolCall.Function.Arguments)
-	}
+	cb.handleGenericTool(toolCall.Function.Name, arguments)
 
 	return nil
 }
@@ -192,9 +187,9 @@ func (cb *LoggerCallback) handleSingleToolCall(toolCall schema.ToolCall) error {
 //   - arguments: JSON string containing tool arguments
 //
 // Returns:
-//   - map[string]interface{}: Parsed arguments as a map
+//   - map[string]any: Parsed arguments as a map
 //   - error: Error if JSON parsing fails
-func (cb *LoggerCallback) parseToolArguments(arguments string) (map[string]interface{}, error) {
+func (cb *LoggerCallback) parseToolArguments(arguments string) (map[string]any, error) {
 	argStr := strings.TrimSpace(arguments)
 	if argStr == "" {
 		return make(map[string]interface{}), nil
@@ -213,30 +208,15 @@ func (cb *LoggerCallback) parseToolArguments(arguments string) (map[string]inter
 //
 // Parameters:
 //   - arguments: Parsed tool arguments containing thinking content
-func (cb *LoggerCallback) handleThinkingTool(arguments map[string]interface{}) {
-	if thinkValue, exists := arguments[ThinkFieldName]; exists {
-		if thinkStr, ok := thinkValue.(string); ok && strings.TrimSpace(thinkStr) != "" {
-			cb.notify.OnMessage(thinkStr)
+func (cb *LoggerCallback) handleThinkingTool(arguments map[string]any) {
+	for _, fieldName := range ThinkFieldName {
+		if thinkValue, exists := arguments[fieldName]; exists {
+			if thinkStr, ok := thinkValue.(string); ok && strings.TrimSpace(thinkStr) != "" {
+				cb.notify.OnThinking(thinkStr)
+				return
+			}
 		}
 	}
-}
-
-// handleWebTool handles web-related tools (search, markdown).
-// It extracts thinking content if present and notifies about tool execution.
-// These tools often include reasoning about why they're being used.
-//
-// Parameters:
-//   - toolName: Name of the web tool being executed
-//   - arguments: Parsed tool arguments
-func (cb *LoggerCallback) handleWebTool(toolName string, arguments map[string]interface{}) {
-	// First, handle any thinking content
-	if thinkValue, exists := arguments[ThinkFieldName]; exists {
-		if thinkStr, ok := thinkValue.(string); ok && strings.TrimSpace(thinkStr) != "" {
-			cb.notify.OnMessage(thinkStr)
-		}
-	}
-	// Then notify about the tool execution
-	cb.notify.OnMessage(ToolCallingPrefix + toolName)
 }
 
 // handleGenericTool handles all other tools with a generic approach.
@@ -245,12 +225,16 @@ func (cb *LoggerCallback) handleWebTool(toolName string, arguments map[string]in
 // Parameters:
 //   - toolName: Name of the tool being executed
 //   - arguments: Raw JSON arguments string
-func (cb *LoggerCallback) handleGenericTool(toolName, arguments string) {
-	cb.notify.OnMessage(fmt.Sprintf("%s %s", toolName, arguments))
+func (cb *LoggerCallback) handleGenericTool(toolName string, arguments map[string]any) {
+	// First, handle any thinking content
+	cb.handleThinkingTool(arguments)
+
+	// Then notify about the tool execution
+	cb.notify.OnToolCall(toolName, arguments)
 }
 
 // OnEnd is called when a callback operation ends successfully.
-// Currently no specific handling is needed for successful completion.
+// Currently, no specific handling is needed for successful completion.
 //
 // Parameters:
 //   - ctx: Context for the operation

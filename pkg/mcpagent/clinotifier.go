@@ -49,7 +49,7 @@ func NewCliNotifier() *CliNotifier {
 //	notifier.OnMessage("正在分析网站结构...")
 //	notifier.OnMessage("发现3个潜在安全问题")
 func (n *CliNotifier) OnMessage(msg string) {
-	fmt.Println(msg)
+	fmt.Println("消息:", msg)
 }
 
 // OnResult prints a result notification to stdout.
@@ -63,7 +63,7 @@ func (n *CliNotifier) OnMessage(msg string) {
 //
 //	notifier.OnResult("分析完成：网站安全评分为85分")
 func (n *CliNotifier) OnResult(msg string) {
-	fmt.Println(msg)
+	fmt.Println("结果:", msg)
 }
 
 // OnError prints an error notification to stderr.
@@ -81,4 +81,12 @@ func (n *CliNotifier) OnResult(msg string) {
 //	// Output: 错误: 无法连接到目标服务器
 func (n *CliNotifier) OnError(err error) {
 	fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+}
+
+func (n *CliNotifier) OnThinking(msg string) {
+	fmt.Println("思考中:", msg)
+}
+
+func (n *CliNotifier) OnToolCall(toolName string, params any) {
+	fmt.Printf("正在调用工具: %s, 参数: %v\n", toolName, params)
 }
