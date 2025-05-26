@@ -83,10 +83,31 @@ func (n *CliNotifier) OnError(err error) {
 	fmt.Fprintf(os.Stderr, "错误: %v\n", err)
 }
 
+// OnThinking prints a thinking notification to stdout.
+// This is used when the agent is thinking about something.
+//
+// Parameters:
+//   - msg: The thinking message from the agent
+//
+// Example:
+//
+//	notifier.OnThinking("正在思考中...")
+//	// Output: 思考中: 正在思考中...
 func (n *CliNotifier) OnThinking(msg string) {
 	fmt.Println("思考中:", msg)
 }
 
+// OnToolCall prints a tool call notification to stdout.
+// This is used when the agent is calling a tool.
+//
+// Parameters:
+//   - toolName: The name of the tool being called
+//   - params: The parameters for the tool call
+//
+// Example:
+//
+//	notifier.OnToolCall("web_search", map[string]interface{}{"query": "test query"})
+//	// Output: 正在调用工具: web_search, 参数: map[query:test query]
 func (n *CliNotifier) OnToolCall(toolName string, params any) {
 	fmt.Printf("正在调用工具: %s, 参数: %v\n", toolName, params)
 }
