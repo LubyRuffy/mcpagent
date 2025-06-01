@@ -4,5 +4,13 @@ config.out
 mcpagent.out
 mcphost.out
 mcpservers.json
-.idea
-.vscode
+.idea/
+.vscode/
+/web/dist/
+/web/node_modules/
+/bin/
+/logs/
+/data/
+/build/
+mcpagent
+mcpagent-web

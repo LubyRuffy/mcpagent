@@ -63,7 +63,7 @@ const (
 	defaultOllamaModel   = "qwen3:4b"
 	defaultOllamaAPIKey  = "ollama"
 	defaultMaxStep       = 20
-	defaultSystemPrompt  = `你是精通互联网的信息收集专家，需要帮助用户进行信息收集，当前时间是：{date}。`
+	defaultSystemPrompt  = `你是精通互联网的信息收集专家，你可以多次调用提供的工具进行信息收集。当前时间是：{date}。`
 )
 
 // Environment variable configuration
@@ -122,8 +122,8 @@ type MCPConfig struct {
 // Returns:
 //   - error: validation error if configuration is invalid, nil otherwise
 func (m *MCPConfig) Validate() error {
-	// 如果MCPServers不为空，则优先使用MCPServers配置
-	if len(m.MCPServers) > 0 {
+	// 如果MCPServers不为nil，则优先使用MCPServers配置（即使为空）
+	if m.MCPServers != nil {
 		return nil
 	}
 
@@ -320,8 +320,8 @@ func (c *Config) GetTools(ctx context.Context) ([]tool.BaseTool, func(), error) 
 	var mcpHub MCPHubInterface
 	var err error
 
-	// 如果MCPServers不为空，则优先使用MCPServers配置
-	if len(c.MCP.MCPServers) > 0 {
+	// 如果MCPServers不为nil，则优先使用MCPServers配置（即使为空）
+	if c.MCP.MCPServers != nil {
 		// 创建MCPSettings
 		settings := &mcphost.MCPSettings{
 			MCPServers: c.MCP.MCPServers,
@@ -410,7 +410,7 @@ func (c *Config) setViperValues() {
 func NewDefaultConfig() *Config {
 	return &Config{
 		MCP: MCPConfig{
-			ConfigFile: "mcpservers.json",
+			MCPServers: make(map[string]mcphost.ServerConfig),
 			Tools:      []string{},
 		},
 		LLM: LLMConfig{

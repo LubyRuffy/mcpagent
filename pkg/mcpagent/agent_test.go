@@ -22,6 +22,14 @@ func (m *MockNotify) OnMessage(msg string) {
 	m.Called(msg)
 }
 
+func (m *MockNotify) OnThinking(msg string) {
+	m.Called(msg)
+}
+
+func (m *MockNotify) OnToolCall(toolName string, params any) {
+	m.Called(toolName, params)
+}
+
 func (m *MockNotify) OnResult(msg string) {
 	m.Called(msg)
 }
@@ -254,9 +262,12 @@ func TestLoggerCallbackOnStartWithToolCalls(t *testing.T) {
 		notify: mockNotify,
 	}
 
-	// 设置期望
-	mockNotify.On("OnMessage", "test thinking").Return()
-	mockNotify.On("OnMessage", "正在调用工具：web_search").Return()
+	// 设置期望 - 需要同时设置OnThinking和OnToolCall
+	mockNotify.On("OnThinking", "test thinking").Return()
+	mockNotify.On("OnToolCall", "web_search", map[string]interface{}{
+		"query": "test query",
+		"think": "test thinking",
+	}).Return()
 
 	// 创建一个简单的上下文
 	ctx := context.Background()
@@ -277,7 +288,7 @@ func TestLoggerCallbackOnStartWithToolCalls(t *testing.T) {
 	// 验证返回的上下文
 	assert.Equal(t, ctx, result)
 
-	// 验证OnMessage是否被调用
+	// 验证OnThinking和OnToolCall是否被调用
 	mockNotify.AssertExpectations(t)
 }
 
@@ -288,8 +299,11 @@ func TestLoggerCallbackOnStartWithSequentialThinking(t *testing.T) {
 		notify: mockNotify,
 	}
 
-	// 设置期望
-	mockNotify.On("OnMessage", "sequential thinking test").Return()
+	// 设置期望 - sequentialthinking工具会调用OnThinking和OnToolCall
+	mockNotify.On("OnThinking", "sequential thinking test").Return()
+	mockNotify.On("OnToolCall", "sequentialthinking", map[string]interface{}{
+		"think": "sequential thinking test",
+	}).Return()
 
 	// 创建一个简单的上下文
 	ctx := context.Background()
@@ -310,7 +324,7 @@ func TestLoggerCallbackOnStartWithSequentialThinking(t *testing.T) {
 	// 验证返回的上下文
 	assert.Equal(t, ctx, result)
 
-	// 验证OnMessage是否被调用
+	// 验证OnThinking和OnToolCall是否被调用
 	mockNotify.AssertExpectations(t)
 }
 
@@ -321,8 +335,10 @@ func TestLoggerCallbackOnStartWithDefaultTool(t *testing.T) {
 		notify: mockNotify,
 	}
 
-	// 设置期望
-	mockNotify.On("OnMessage", "default_tool {\"param\":\"value\"}").Return()
+	// 设置期望 - 默认工具会调用OnToolCall
+	mockNotify.On("OnToolCall", "default_tool", map[string]interface{}{
+		"param": "value",
+	}).Return()
 
 	// 创建一个简单的上下文
 	ctx := context.Background()
@@ -343,7 +359,7 @@ func TestLoggerCallbackOnStartWithDefaultTool(t *testing.T) {
 	// 验证返回的上下文
 	assert.Equal(t, ctx, result)
 
-	// 验证OnMessage是否被调用
+	// 验证OnToolCall是否被调用
 	mockNotify.AssertExpectations(t)
 }
 
@@ -577,7 +593,7 @@ func TestHandleThinkingToolEdgeCases(t *testing.T) {
 	callback.notify = mockNotify
 
 	// 测试think字段有有效内容
-	mockNotify.On("OnMessage", "valid thinking").Return()
+	mockNotify.On("OnThinking", "valid thinking").Return()
 	arguments = map[string]interface{}{
 		"think": "valid thinking",
 	}
@@ -585,19 +601,19 @@ func TestHandleThinkingToolEdgeCases(t *testing.T) {
 	mockNotify.AssertExpectations(t)
 }
 
-// 测试handleWebTool函数的边界情况
-func TestHandleWebToolEdgeCases(t *testing.T) {
+// 测试handleGenericTool函数的边界情况
+func TestHandleGenericToolEdgeCases(t *testing.T) {
 	mockNotify := new(MockNotify)
 	callback := &LoggerCallback{
 		notify: mockNotify,
 	}
 
 	// 测试没有think字段的情况
-	mockNotify.On("OnMessage", "正在调用工具：web_search").Return()
+	mockNotify.On("OnToolCall", "web_search", map[string]interface{}{"query": "test query"}).Return()
 	arguments := map[string]interface{}{
 		"query": "test query",
 	}
-	callback.handleWebTool("web_search", arguments)
+	callback.handleGenericTool("web_search", arguments)
 	mockNotify.AssertExpectations(t)
 
 	// 重置mock
@@ -605,12 +621,12 @@ func TestHandleWebToolEdgeCases(t *testing.T) {
 	callback.notify = mockNotify
 
 	// 测试有think字段但为空的情况
-	mockNotify.On("OnMessage", "正在调用工具：url_markdown").Return()
+	mockNotify.On("OnToolCall", "url_markdown", map[string]interface{}{"think": "", "url": "http://example.com"}).Return()
 	arguments = map[string]interface{}{
 		"think": "",
 		"url":   "http://example.com",
 	}
-	callback.handleWebTool("url_markdown", arguments)
+	callback.handleGenericTool("url_markdown", arguments)
 	mockNotify.AssertExpectations(t)
 
 	// 重置mock
@@ -618,13 +634,13 @@ func TestHandleWebToolEdgeCases(t *testing.T) {
 	callback.notify = mockNotify
 
 	// 测试有有效think字段的情况
-	mockNotify.On("OnMessage", "thinking about search").Return()
-	mockNotify.On("OnMessage", "正在调用工具：web_search").Return()
+	mockNotify.On("OnThinking", "thinking about search").Return()
+	mockNotify.On("OnToolCall", "web_search", map[string]interface{}{"think": "thinking about search", "query": "test query"}).Return()
 	arguments = map[string]interface{}{
 		"think": "thinking about search",
 		"query": "test query",
 	}
-	callback.handleWebTool("web_search", arguments)
+	callback.handleGenericTool("web_search", arguments)
 	mockNotify.AssertExpectations(t)
 
 	// 重置mock
@@ -632,12 +648,12 @@ func TestHandleWebToolEdgeCases(t *testing.T) {
 	callback.notify = mockNotify
 
 	// 测试think字段不是字符串的情况
-	mockNotify.On("OnMessage", "正在调用工具：web_search").Return()
+	mockNotify.On("OnToolCall", "web_search", map[string]interface{}{"think": 123, "query": "test query"}).Return()
 	arguments = map[string]interface{}{
 		"think": 123, // 不是字符串
 		"query": "test query",
 	}
-	callback.handleWebTool("web_search", arguments)
+	callback.handleGenericTool("web_search", arguments)
 	mockNotify.AssertExpectations(t)
 }
 
@@ -649,8 +665,9 @@ func TestHandleGenericTool(t *testing.T) {
 	}
 
 	// 测试基本功能
-	mockNotify.On("OnMessage", "custom_tool {\"param\":\"value\"}").Return()
-	callback.handleGenericTool("custom_tool", `{"param":"value"}`)
+	arguments := map[string]interface{}{"param": "value"}
+	mockNotify.On("OnToolCall", "custom_tool", arguments).Return()
+	callback.handleGenericTool("custom_tool", arguments)
 	mockNotify.AssertExpectations(t)
 
 	// 重置mock
@@ -658,8 +675,9 @@ func TestHandleGenericTool(t *testing.T) {
 	callback.notify = mockNotify
 
 	// 测试空参数
-	mockNotify.On("OnMessage", "empty_tool ").Return()
-	callback.handleGenericTool("empty_tool", "")
+	emptyArgs := map[string]interface{}{}
+	mockNotify.On("OnToolCall", "empty_tool", emptyArgs).Return()
+	callback.handleGenericTool("empty_tool", emptyArgs)
 	mockNotify.AssertExpectations(t)
 }
 
@@ -1051,7 +1069,7 @@ func TestLoggerCallbackOnStartWithStreamInput(t *testing.T) {
 	callback := &LoggerCallback{notify: &MockNotify{}}
 	ctx := context.Background()
 	info := &callbacks.RunInfo{}
-	
+
 	// 创建一个mock StreamReader
 	// 由于无法直接创建StreamReader，我们通过反射来测试这个方法
 	defer func() {
@@ -1059,7 +1077,7 @@ func TestLoggerCallbackOnStartWithStreamInput(t *testing.T) {
 			t.Log("OnStartWithStreamInput执行成功")
 		}
 	}()
-	
+
 	// 直接调用方法测试逻辑
 	resultCtx := callback.OnStartWithStreamInput(ctx, info, nil)
 	assert.Equal(t, ctx, resultCtx)
@@ -1071,31 +1089,31 @@ func TestRunSuccessPath(t *testing.T) {
 	mockConfig := &MockConfig{}
 	task := "test task"
 	notify := new(MockNotify)
-	
+
 	// 模拟GetTools成功
 	mockTools := []tool.BaseTool{&MockBaseTool{}}
 	cleanup := func() {}
 	mockConfig.On("GetTools", ctx).Return(mockTools, cleanup, nil)
-	
+
 	// 模拟GetModel成功
 	mockModel := &MockToolCallingChatModel{}
 	mockConfig.On("GetModel", ctx).Return(mockModel, nil)
-	
+
 	// 设置默认配置值
 	mockConfig.Config = config.Config{
 		MaxStep:      10,
 		SystemPrompt: "test prompt",
 	}
-	
+
 	// 由于无法直接模拟完整的agent创建和执行，我们测试参数验证部分
 	err := Run(ctx, nil, task, notify)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "配置不能为空")
-	
+
 	err = Run(ctx, &mockConfig.Config, "", notify)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "任务不能为空")
-	
+
 	err = Run(ctx, &mockConfig.Config, task, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "通知处理器不能为空")
@@ -1105,14 +1123,14 @@ func TestRunSuccessPath(t *testing.T) {
 func TestExecuteAgentTaskErrorCases(t *testing.T) {
 	ctx := context.Background()
 	notify := new(MockNotify)
-	
+
 	// 测试nil config的情况 - 预期panic
 	defer func() {
 		if r := recover(); r != nil {
 			t.Logf("executeAgentTask with nil config panicked as expected: %v", r)
 		}
 	}()
-	
+
 	// 测试有效配置但nil agent的情况
 	cfg := &config.Config{
 		SystemPrompt: "test prompt",
@@ -1128,14 +1146,14 @@ func TestHandleStreamOutputWithDifferentInputs(t *testing.T) {
 	info := &callbacks.RunInfo{
 		Name: "test_graph",
 	}
-	
+
 	// 测试nil StreamReader的情况
 	defer func() {
 		if r := recover(); r != nil {
 			t.Logf("handleStreamOutput恢复从panic: %v", r)
 		}
 	}()
-	
+
 	callback.handleStreamOutput(info, nil)
 }
 
@@ -1145,7 +1163,7 @@ func TestProcessStreamFrameEdgeCases(t *testing.T) {
 	info := &callbacks.RunInfo{
 		Name: "unknown_graph",
 	}
-	
+
 	// 测试nil frame
 	err := callback.processStreamFrame(info, nil)
 	assert.NoError(t, err)
@@ -1154,7 +1172,7 @@ func TestProcessStreamFrameEdgeCases(t *testing.T) {
 // TestLoggerCallbackWithNilNotify 测试LoggerCallback在notify为nil时的行为
 func TestLoggerCallbackWithNilNotify(t *testing.T) {
 	callback := &LoggerCallback{notify: nil}
-	
+
 	// 测试OnEnd方法
 	defer func() {
 		if r := recover(); r != nil {
@@ -1162,7 +1180,7 @@ func TestLoggerCallbackWithNilNotify(t *testing.T) {
 		}
 	}()
 	callback.OnEnd(context.Background(), &callbacks.RunInfo{}, nil)
-	
+
 	// 测试OnError方法
 	defer func() {
 		if r := recover(); r != nil {
@@ -1175,16 +1193,16 @@ func TestLoggerCallbackWithNilNotify(t *testing.T) {
 // TestRunWithMockConfigSuccess 测试使用MockConfig的Run函数成功情况
 func TestRunWithMockConfigSuccess(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// 创建模拟配置
 	mockConfig := &config.Config{
 		MaxStep:      5,
 		SystemPrompt: "You are a helpful assistant",
 	}
-	
+
 	task := "简单的测试任务"
 	notify := new(MockNotify)
-	
+
 	// 测试参数验证成功但工具获取失败的情况
 	err := Run(ctx, mockConfig, task, notify)
 	assert.Error(t, err)
@@ -1195,23 +1213,23 @@ func TestRunWithMockConfigSuccess(t *testing.T) {
 func TestValidateRunParametersAllCases(t *testing.T) {
 	notify := new(MockNotify)
 	cfg := &config.Config{}
-	
+
 	// 测试所有nil参数组合
 	err := validateRunParameters(nil, "", nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "配置不能为空")
-	
+
 	err = validateRunParameters(cfg, "", nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "任务不能为空")
-	
+
 	err = validateRunParameters(cfg, "test", nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "通知处理器不能为空")
-	
+
 	err = validateRunParameters(cfg, "test", notify)
 	assert.NoError(t, err)
-	
+
 	// 测试空白字符串task
 	err = validateRunParameters(cfg, "   ", notify)
 	assert.Error(t, err)
@@ -1221,22 +1239,22 @@ func TestValidateRunParametersAllCases(t *testing.T) {
 // TestParseToolArgumentsEdgeCases 测试parseToolArguments的边界情况
 func TestParseToolArgumentsEdgeCases(t *testing.T) {
 	callback := &LoggerCallback{notify: new(MockNotify)}
-	
+
 	// 测试空参数
 	result, err := callback.parseToolArguments("")
 	assert.NoError(t, err)
 	assert.Empty(t, result)
-	
+
 	// 测试无效JSON
 	result, err = callback.parseToolArguments("invalid json")
 	assert.Error(t, err)
 	assert.Nil(t, result)
-	
+
 	// 测试有效JSON
 	result, err = callback.parseToolArguments(`{"key": "value"}`)
 	assert.NoError(t, err)
 	assert.Equal(t, "value", result["key"])
-	
+
 	// 测试嵌套JSON
 	result, err = callback.parseToolArguments(`{"nested": {"key": "value"}}`)
 	assert.NoError(t, err)
@@ -1247,10 +1265,18 @@ func TestParseToolArgumentsEdgeCases(t *testing.T) {
 func TestHandleToolCallsWithComplexScenarios(t *testing.T) {
 	mockNotify := new(MockNotify)
 	callback := &LoggerCallback{notify: mockNotify}
-	
-	// 设置期望的调用 - 使用mock.Anything来匹配任何消息
-	mockNotify.On("OnMessage", mock.Anything).Return()
-	
+
+	// 设置期望 - 为每个工具调用设置期望
+	mockNotify.On("OnToolCall", "sequentialthinking", map[string]interface{}{
+		"content": "thinking 1",
+	}).Return()
+	mockNotify.On("OnToolCall", "web_search", map[string]interface{}{
+		"query": "test query",
+	}).Return()
+	mockNotify.On("OnToolCall", "unknown_tool", map[string]interface{}{
+		"param": "value",
+	}).Return()
+
 	// 测试多个工具调用
 	toolCalls := []schema.ToolCall{
 		{
@@ -1262,7 +1288,7 @@ func TestHandleToolCallsWithComplexScenarios(t *testing.T) {
 			},
 		},
 		{
-			ID:   "2", 
+			ID:   "2",
 			Type: "function",
 			Function: schema.FunctionCall{
 				Name:      ToolWebSearch,
@@ -1271,32 +1297,32 @@ func TestHandleToolCallsWithComplexScenarios(t *testing.T) {
 		},
 		{
 			ID:   "3",
-			Type: "function", 
+			Type: "function",
 			Function: schema.FunctionCall{
 				Name:      "unknown_tool",
 				Arguments: `{"param": "value"}`,
 			},
 		},
 	}
-	
+
 	callback.processToolCalls(toolCalls)
-	
-	// 验证OnMessage被调用了至少一次
-	mockNotify.AssertCalled(t, "OnMessage", mock.Anything)
+
+	// 验证所有OnToolCall都被调用了
+	mockNotify.AssertExpectations(t)
 }
 
 // TestHandleStreamOutputRecovery 测试handleStreamOutput的恢复机制
 func TestHandleStreamOutputRecovery(t *testing.T) {
 	callback := &LoggerCallback{notify: new(MockNotify)}
 	info := &callbacks.RunInfo{}
-	
+
 	// 创建一个会导致panic的场景
 	defer func() {
 		if r := recover(); r == nil {
 			t.Log("handleStreamOutput正常执行，没有panic")
 		}
 	}()
-	
+
 	// 直接传递nil会触发panic恢复机制
 	callback.handleStreamOutput(info, nil)
 }

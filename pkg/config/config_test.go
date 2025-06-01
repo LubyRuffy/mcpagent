@@ -216,7 +216,9 @@ func TestLoadConfigDefault(t *testing.T) {
 
 	// 验证默认配置
 	assert.Equal(t, "", cfg.Proxy)
-	assert.Equal(t, "mcpservers.json", cfg.MCP.ConfigFile)
+	assert.Equal(t, "", cfg.MCP.ConfigFile)
+	assert.NotNil(t, cfg.MCP.MCPServers)
+	assert.Equal(t, 0, len(cfg.MCP.MCPServers))
 	assert.Equal(t, []string{}, cfg.MCP.Tools)
 	assert.Equal(t, "ollama", cfg.LLM.Type)
 	assert.Equal(t, "http://127.0.0.1:11434", cfg.LLM.BaseURL)
@@ -648,15 +650,24 @@ func TestMCPConfigValidate(t *testing.T) {
 	err = validMCPWithServers.Validate()
 	assert.NoError(t, err)
 
-	// 测试无效配置 - 空的配置文件路径且空的MCPServers
+	// 测试无效配置 - 空的配置文件路径且nil的MCPServers
 	invalidMCP := MCPConfig{
 		ConfigFile: "",
-		MCPServers: map[string]mcphost.ServerConfig{},
+		MCPServers: nil, // nil MCPServers
 		Tools:      []string{"tool1"},
 	}
 	err = invalidMCP.Validate()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "MCP配置文件路径不能为空")
+
+	// 测试有效配置 - 空的MCPServers map（但不是nil）
+	validEmptyMCP := MCPConfig{
+		ConfigFile: "",
+		MCPServers: map[string]mcphost.ServerConfig{}, // 空但不是nil
+		Tools:      []string{"tool1"},
+	}
+	err = validEmptyMCP.Validate()
+	assert.NoError(t, err)
 }
 
 // TestLLMConfigValidate 测试 LLMConfig 的验证方法
@@ -894,7 +905,8 @@ func TestGetDefaultConfig(t *testing.T) {
 	config := NewDefaultConfig()
 
 	assert.Equal(t, "", config.Proxy)
-	assert.Equal(t, "mcpservers.json", config.MCP.ConfigFile)
+	assert.NotNil(t, config.MCP.MCPServers)
+	assert.Equal(t, 0, len(config.MCP.MCPServers))
 	assert.Equal(t, []string{}, config.MCP.Tools)
 	assert.Equal(t, "ollama", config.LLM.Type)
 	assert.Equal(t, "http://127.0.0.1:11434", config.LLM.BaseURL)
@@ -964,7 +976,9 @@ func TestNewDefaultConfig(t *testing.T) {
 
 	assert.NotNil(t, cfg)
 	assert.Equal(t, "", cfg.Proxy)
-	assert.Equal(t, "mcpservers.json", cfg.MCP.ConfigFile)
+	assert.Equal(t, "", cfg.MCP.ConfigFile)
+	assert.NotNil(t, cfg.MCP.MCPServers)
+	assert.Equal(t, 0, len(cfg.MCP.MCPServers))
 	assert.Equal(t, []string{}, cfg.MCP.Tools)
 	assert.Equal(t, LLMProviderOllama, cfg.LLM.Type)
 	assert.Equal(t, defaultOllamaBaseURL, cfg.LLM.BaseURL)
@@ -1162,7 +1176,7 @@ func TestConfigValidateMaxStep(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &Config{
 				MCP: MCPConfig{
-					ConfigFile: "test.json",
+					MCPServers: make(map[string]mcphost.ServerConfig),
 					Tools:      []string{},
 				},
 				LLM: LLMConfig{

@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"sync"
 
 	"github.com/bytedance/sonic"
@@ -307,8 +308,8 @@ func (h *MCPHub) convertToolSchema(mcpTool mcp.Tool) (*openapi3.Schema, error) {
 // connection lifecycle including initialization, tool discovery, and error handling.
 //
 // The function performs the following steps:
-//  1. Closes any existing connection for the server
-//  2. Creates a new MCP client based on transport configuration
+//  1. Tries to reuse existing connection from the global connection pool
+//  2. If no connection exists, creates a new client based on transport configuration
 //  3. Sets up logging for server stderr output
 //  4. Initializes the MCP protocol handshake
 //  5. Discovers and registers available tools
@@ -324,6 +325,33 @@ func (h *MCPHub) connectToServer(ctx context.Context, serverName string, config 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	// 先检查连接池中是否已有此服务器的连接
+	pool := GetConnectionPool()
+	existingHub, err := pool.GetHubByServerName(serverName)
+
+	// 如果找到已有连接，则复用该连接的客户端
+	if err == nil && existingHub != nil {
+		existingClient, err := existingHub.GetClient(serverName)
+		if err == nil && existingClient != nil {
+			// 存储复用的连接
+			h.connections[serverName] = &Connection{
+				Client: existingClient,
+				Config: config,
+			}
+
+			// 复制相关工具
+			for toolKey, tool := range existingHub.tools {
+				if strings.HasPrefix(toolKey, serverName+"_") {
+					h.tools[toolKey] = tool
+				}
+			}
+
+			log.Printf("复用已有MCP服务器连接: %s", serverName)
+			return nil
+		}
+	}
+
+	// 如果没有找到已有连接或复用失败，则创建新连接
 	log.Printf("正在连接到MCP服务器: %s", serverName)
 
 	// Close existing connection if any
@@ -524,6 +552,33 @@ func (h *MCPHub) GetEinoTools(ctx context.Context, toolNameList []string) ([]too
 		} else {
 			return nil, fmt.Errorf("工具不存在: %s", toolName)
 		}
+	}
+
+	return result, nil
+}
+
+// GetToolsMap returns a map of all available tools with their information.
+// This method provides access to tool metadata without converting to Eino format.
+// It's useful for tool discovery and caching scenarios.
+//
+// Parameters:
+//   - ctx: Context for the operation (currently unused but kept for future extensibility)
+//
+// Returns:
+//   - map[string]*schema.ToolInfo: Map of tool keys to tool information
+//   - error: Error if tool information retrieval fails
+func (h *MCPHub) GetToolsMap(ctx context.Context) (map[string]*schema.ToolInfo, error) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	result := make(map[string]*schema.ToolInfo)
+
+	for toolKey, tool := range h.tools {
+		toolInfo, err := tool.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("获取工具 %s 信息失败: %w", toolKey, err)
+		}
+		result[toolKey] = toolInfo
 	}
 
 	return result, nil
