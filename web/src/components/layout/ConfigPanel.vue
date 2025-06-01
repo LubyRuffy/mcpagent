@@ -41,18 +41,6 @@
         </div>
       </el-scrollbar>
     </div>
-
-    <!-- 保存按钮 -->
-    <div class="panel-footer">
-      <el-button
-        type="primary"
-        :loading="configStore.isLoading"
-        @click="saveConfig"
-        class="save-button"
-      >
-        {{ $t('config.actions.save') }}
-      </el-button>
-    </div>
   </div>
 </template>
 

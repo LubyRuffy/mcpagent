@@ -209,8 +209,6 @@ A: 修改配置文件中的 `system_prompt` 字段，或使用 `-system-prompt` 
 - [Cloudwego Eino](https://github.com/cloudwego/eino) - AI 应用开发框架
 - [MCP Protocol](https://modelcontextprotocol.io/) - 模型上下文协议
 - [mark3labs/mcp-go](https://github.com/mark3labs/mcp-go) - Go MCP 实现
-- [Testify](https://github.com/stretchr/testify) - Go 测试框架
-- [Viper](https://github.com/spf13/viper) - Go 配置管理
 
 ## 📞 支持与反馈
 

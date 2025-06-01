@@ -72,6 +72,18 @@
     <div class="prompt-content-section" v-if="currentSelectedConfig || isTemplateSelected">
       <div class="section-header">
         <span class="section-title">{{ $t('config.prompt.content') }}</span>
+        <!-- 预览按钮移到这里 -->
+        <el-tooltip :content="$t('config.prompt.showPreview')" placement="top">
+          <el-button
+            size="small"
+            circle
+            @click="showPreviewDialog = true"
+            class="preview-btn"
+            v-if="systemPrompt"
+          >
+            <el-icon><View /></el-icon>
+          </el-button>
+        </el-tooltip>
       </div>
       <el-input
         v-model="systemPrompt"
@@ -115,22 +127,6 @@
       </div>
     </div>
 
-    <!-- 预览区域 -->
-    <div class="preview-section">
-      <div class="section-header">
-        <span class="section-title">{{ $t('config.prompt.preview') }}</span>
-        <el-button
-          size="small"
-          @click="showPreview = !showPreview"
-        >
-          {{ showPreview ? $t('config.prompt.hidePreview') : $t('config.prompt.showPreview') }}
-        </el-button>
-      </div>
-      <div v-if="showPreview" class="preview-content">
-        <pre class="preview-text">{{ previewText }}</pre>
-      </div>
-    </div>
-
     <!-- 无配置时的提示 -->
     <div v-if="!currentSelectedConfig && !isTemplateSelected" class="no-config-tip">
       <el-empty :description="$t('config.prompt.selectOrCreate')" :image-size="60">
@@ -147,6 +143,20 @@
     :edit-prompt="editingConfig"
     @success="handleConfigSuccess"
   />
+
+  <!-- 预览弹窗 -->
+  <el-dialog
+    v-model="showPreviewDialog"
+    :title="$t('config.prompt.preview')"
+    width="60%"
+    :close-on-click-modal="true"
+    :close-on-press-escape="true"
+    class="preview-dialog"
+  >
+    <div class="preview-dialog-content">
+      <pre class="preview-text">{{ previewText }}</pre>
+    </div>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -156,7 +166,13 @@ import { useConfigStore } from '@/stores/config'
 import { useI18n } from 'vue-i18n'
 import CreateSystemPromptDialog from './CreateSystemPromptDialog.vue'
 import ConfigSelector from '@/components/common/ConfigSelector.vue'
+import {
+  MoreFilled,
+  DocumentAdd,
+  DocumentCopy
+} from '@element-plus/icons-vue'
 import type { SystemPromptModel, CreateSystemPromptForm } from '@/types/config'
+import { View } from '@element-plus/icons-vue'
 
 const configStore = useConfigStore()
 const { t } = useI18n()
@@ -166,7 +182,7 @@ const selectedConfigId = ref<number | string>('')
 const showCreateDialog = ref(false)
 const editingConfig = ref<SystemPromptModel | null>(null)
 const showDetails = ref(false)
-const showPreview = ref(false)
+const showPreviewDialog = ref(false)  // 改为控制弹窗显示
 const showPlaceholders = ref(true)
 const refreshKey = ref(0)
 
@@ -256,9 +272,6 @@ const handleConfigSelect = (configId: number | string) => {
   const id = typeof configId === 'number' ? configId : parseInt(configId as string)
   if (!isNaN(id)) {
     configStore.selectSystemPrompt(id)
-    
-    // 自动显示预览
-    showPreview.value = true
   }
 }
 
@@ -418,7 +431,7 @@ const saveCurrentAsNew = () => {
   justify-content: space-between;
 }
 
-.icon-btn {
+.icon-btn, .preview-btn {
   width: 24px;
   height: 24px;
   padding: 0;
@@ -483,27 +496,31 @@ const saveCurrentAsNew = () => {
   margin-bottom: 4px;
 }
 
-/* 预览区域 */
-.preview-section {
-  margin-top: 6px;
-}
-
-.preview-content {
-  margin-top: 4px;
-  padding: 6px;
+/* 预览弹窗样式 */
+.preview-dialog-content {
+  padding: 10px;
   background-color: var(--el-fill-color-lighter);
   border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
-  max-height: 150px;
+  max-height: 60vh;
   overflow-y: auto;
 }
 
 .preview-text {
   margin: 0;
   white-space: pre-wrap;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-color-regular);
   overflow-wrap: break-word;
+}
+
+:deep(.preview-dialog .el-dialog__header) {
+  padding: 10px 16px;
+  margin-right: 0;
+}
+
+:deep(.preview-dialog .el-dialog__body) {
+  padding: 0 16px 16px;
 }
 
 /* 配置详情容器样式 */
@@ -552,12 +569,12 @@ const saveCurrentAsNew = () => {
     font-size: 12px;
   }
   
-  .preview-content {
-    max-height: 100px;
-  }
-  
   .config-details-container {
     max-height: 120px;
+  }
+  
+  :deep(.preview-dialog .el-dialog) {
+    width: 90% !important;
   }
 }
 </style>

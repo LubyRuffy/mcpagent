@@ -14,3 +14,9 @@ mcpservers.json
 /build/
 mcpagent
 mcpagent-web
+web/test_mcp_config_final.html
+web/test_mcp_config_updated.html
+MCP_TOOLS_API_SUMMARY.md
+prd.md
+start_server.sh
+diagnose_mcp.sh
