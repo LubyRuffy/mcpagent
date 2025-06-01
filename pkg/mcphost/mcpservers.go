@@ -37,6 +37,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/tool"
@@ -194,12 +195,49 @@ func (h *MCPHub) GetClient(serverName string) (client.MCPClient, error) {
 // It returns a function that can be used by the Eino framework to invoke the tool.
 func createToolInvoker(serverName, toolName string, cli *client.Client) func(ctx context.Context, params map[string]interface{}) (string, error) {
 	return func(ctx context.Context, params map[string]interface{}) (string, error) {
+		// 添加健康检查
+		if cli == nil {
+			return "", fmt.Errorf("MCP服务器客户端为空: %s", serverName)
+		}
+
+		// 使用ping检查连接状态
+		pingCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+
+		err := cli.Ping(pingCtx)
+		if err != nil {
+			log.Printf("MCP服务器连接不可用: %s, 错误: %v", serverName, err)
+			return "", fmt.Errorf("MCP服务器连接不可用: %s, 错误: %v", serverName, err)
+		}
+
 		req := mcp.CallToolRequest{}
 		req.Params.Name = toolName
 		req.Params.Arguments = params
 
-		callToolResult, err := cli.CallTool(ctx, req)
-		if err != nil {
+		// 尝试调用工具，最多重试一次
+		var callToolResult *mcp.CallToolResult
+		var retryCount int = 1
+
+		for i := 0; i <= retryCount; i++ {
+			// 创建一个带超时的上下文，确保工具调用不会无限期阻塞
+			toolCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+
+			callToolResult, err = cli.CallTool(toolCtx, req)
+			if err == nil {
+				break // 调用成功，跳出重试循环
+			}
+
+			// 检查是否为连接已关闭错误
+			if i < retryCount && (strings.Contains(err.Error(), "file already closed") ||
+				strings.Contains(err.Error(), "transport error") ||
+				strings.Contains(err.Error(), "failed to write request")) {
+				log.Printf("工具调用出错 %s/%s: %v, 正在重试...", serverName, toolName, err)
+				time.Sleep(100 * time.Millisecond) // 短暂延迟后重试
+				continue
+			}
+
+			// 其他错误或已达到最大重试次数，返回错误
 			return "", errors.Wrapf(err, "调用工具 %s/%s 失败", serverName, toolName)
 		}
 

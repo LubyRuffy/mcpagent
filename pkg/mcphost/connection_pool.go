@@ -94,6 +94,27 @@ func generateConfigKey(settings *MCPSettings) string {
 	return key
 }
 
+// 检查连接是否健康
+func (p *ConnectionPool) checkConnectionHealth(hub *MCPHub, configKey string) bool {
+	// 简单检查是否有连接可用
+	if len(hub.connections) == 0 {
+		return false
+	}
+
+	// 如果有连接可用，尝试获取工具列表以验证连接是否正常
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// 尝试调用GetToolsMap方法，这个方法会检查所有服务器
+	_, err := hub.GetToolsMap(ctx)
+	if err != nil {
+		log.Printf("连接池中的连接不健康: %s, 错误: %v", configKey, err)
+		return false
+	}
+
+	return true
+}
+
 // GetHub 获取或创建一个MCPHub实例
 func (p *ConnectionPool) GetHub(ctx context.Context, settings *MCPSettings) (*MCPHub, error) {
 	configKey := generateConfigKey(settings)
@@ -104,22 +125,30 @@ func (p *ConnectionPool) GetHub(ctx context.Context, settings *MCPSettings) (*MC
 	p.mu.RUnlock()
 
 	if exists {
-		// 更新引用计数和最后访问时间
-		p.mu.Lock()
-		p.refCounts[configKey]++
-		p.lastAccess[configKey] = time.Now()
+		// 检查连接是否健康
+		if !p.checkConnectionHealth(hub, configKey) {
+			log.Printf("连接池中的连接不健康，强制关闭并重新连接")
+			// 强制关闭不健康的连接
+			p.ForceCloseHub(settings)
+			// 继续执行后面的代码创建新连接
+		} else {
+			// 连接健康，更新引用计数和最后访问时间
+			p.mu.Lock()
+			p.refCounts[configKey]++
+			p.lastAccess[configKey] = time.Now()
 
-		// 更新服务器名称到配置键的映射
-		for name := range settings.MCPServers {
-			if !settings.MCPServers[name].Disabled {
-				p.serverHub[name] = configKey
+			// 更新服务器名称到配置键的映射
+			for name := range settings.MCPServers {
+				if !settings.MCPServers[name].Disabled {
+					p.serverHub[name] = configKey
+				}
 			}
+
+			p.mu.Unlock()
+
+			log.Printf("复用已有MCP服务器连接池，当前引用计数: %d", p.refCounts[configKey])
+			return hub, nil
 		}
-
-		p.mu.Unlock()
-
-		log.Printf("复用已有MCP服务器连接池，当前引用计数: %d", p.refCounts[configKey])
-		return hub, nil
 	}
 
 	// 创建新连接

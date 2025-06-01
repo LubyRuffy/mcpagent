@@ -28,7 +28,9 @@ export default {
     default: '默认',
     description: '描述',
     noDescription: '无描述',
-    confirmAction: '确认操作'
+    confirmAction: '确认操作',
+    raw: '原始文本',
+    markdown: 'Markdown'
   },
 
   // 应用标题

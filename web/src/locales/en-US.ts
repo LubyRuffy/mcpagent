@@ -28,7 +28,9 @@ export default {
     default: 'Default',
     description: 'Description',
     noDescription: 'No description',
-    confirmAction: 'Confirm Action'
+    confirmAction: 'Confirm Action',
+    raw: 'Raw Text',
+    markdown: 'Markdown'
   },
 
   // App title

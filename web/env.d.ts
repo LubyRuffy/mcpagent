@@ -36,4 +36,5 @@ declare module '@element-plus/icons-vue' {
   export const Clock: DefineComponent<{}, {}, any>
   export const Delete: DefineComponent<{}, {}, any>
   export const Promotion: DefineComponent<{}, {}, any>
+  export const View: DefineComponent<{}, {}, any>
 }

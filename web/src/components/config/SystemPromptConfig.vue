@@ -154,7 +154,14 @@
     class="preview-dialog"
   >
     <div class="preview-dialog-content">
-      <pre class="preview-text">{{ previewText }}</pre>
+      <el-tabs v-model="previewTab" class="preview-tabs">
+        <el-tab-pane :label="$t('common.raw')" name="raw">
+          <pre class="preview-text">{{ previewText }}</pre>
+        </el-tab-pane>
+        <el-tab-pane :label="$t('common.markdown')" name="markdown">
+          <MarkdownRenderer :content="previewText" />
+        </el-tab-pane>
+      </el-tabs>
     </div>
   </el-dialog>
 </template>
@@ -166,13 +173,15 @@ import { useConfigStore } from '@/stores/config'
 import { useI18n } from 'vue-i18n'
 import CreateSystemPromptDialog from './CreateSystemPromptDialog.vue'
 import ConfigSelector from '@/components/common/ConfigSelector.vue'
+import MarkdownRenderer from '@/components/chat/MarkdownRenderer.vue'
 import {
   MoreFilled,
   DocumentAdd,
-  DocumentCopy
+  DocumentCopy,
+  ChatDotRound,
+  View
 } from '@element-plus/icons-vue'
 import type { SystemPromptModel, CreateSystemPromptForm } from '@/types/config'
-import { View } from '@element-plus/icons-vue'
 
 const configStore = useConfigStore()
 const { t } = useI18n()
@@ -185,6 +194,7 @@ const showDetails = ref(false)
 const showPreviewDialog = ref(false)  // 改为控制弹窗显示
 const showPlaceholders = ref(true)
 const refreshKey = ref(0)
+const previewTab = ref('raw') // 添加预览标签页状态
 
 // 计算属性
 const systemPrompt = computed({
