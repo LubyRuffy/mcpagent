@@ -15,27 +15,58 @@ func TestParseToolsList(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected []string
+		expected []config.MCPToolConfig
 	}{
 		{
 			name:     "空字符串",
 			input:    "",
-			expected: []string{},
+			expected: []config.MCPToolConfig{},
 		},
 		{
-			name:     "单个工具",
-			input:    "tool1",
-			expected: []string{"tool1"},
+			name:  "单个工具",
+			input: "tool1",
+			expected: []config.MCPToolConfig{
+				{
+					Server: "inner",
+					Name:   "tool1",
+				},
+			},
 		},
 		{
-			name:     "多个工具",
-			input:    "tool1,tool2,tool3",
-			expected: []string{"tool1", "tool2", "tool3"},
+			name:  "多个工具",
+			input: "tool1,tool2,tool3",
+			expected: []config.MCPToolConfig{
+				{
+					Server: "inner",
+					Name:   "tool1",
+				},
+				{
+					Server: "inner",
+					Name:   "tool2",
+				},
+				{
+					Server: "inner",
+					Name:   "tool3",
+				},
+			},
 		},
 		{
-			name:     "带空格的工具",
-			input:    " tool1 , tool2 , tool3 ",
-			expected: []string{"tool1", "tool2", "tool3"},
+			name:  "带空格的工具",
+			input: " tool1 , tool2 , tool3 ",
+			expected: []config.MCPToolConfig{
+				{
+					Server: "inner",
+					Name:   "tool1",
+				},
+				{
+					Server: "inner",
+					Name:   "tool2",
+				},
+				{
+					Server: "inner",
+					Name:   "tool3",
+				},
+			},
 		},
 	}
 
@@ -84,7 +115,12 @@ func TestMergeCommandLineArgs(t *testing.T) {
 		Proxy: "original-proxy",
 		MCP: config.MCPConfig{
 			ConfigFile: "original-config.json",
-			Tools:      []string{"original-tool"},
+			Tools: []config.MCPToolConfig{
+				{
+					Server: "test_server",
+					Name:   "original-tool",
+				},
+			},
 		},
 		LLM: config.LLMConfig{
 			Type:    "original-type",
@@ -125,7 +161,16 @@ func TestMergeCommandLineArgs(t *testing.T) {
 	// 验证结果
 	assert.Equal(t, "new-proxy", cfg.Proxy)
 	assert.Equal(t, "new-config.json", cfg.MCP.ConfigFile)
-	assert.Equal(t, []string{"new-tool1", "new-tool2"}, cfg.MCP.Tools)
+	assert.Equal(t, []config.MCPToolConfig{
+		{
+			Server: "inner",
+			Name:   "new-tool1",
+		},
+		{
+			Server: "inner",
+			Name:   "new-tool2",
+		},
+	}, cfg.MCP.Tools)
 	assert.Equal(t, "new-type", cfg.LLM.Type)
 	assert.Equal(t, "new-url", cfg.LLM.BaseURL)
 	assert.Equal(t, "new-model", cfg.LLM.Model)
@@ -140,7 +185,12 @@ func TestMergeCommandLineArgsWithEmptyValues(t *testing.T) {
 		Proxy: "original-proxy",
 		MCP: config.MCPConfig{
 			ConfigFile: "original-config.json",
-			Tools:      []string{"original-tool"},
+			Tools: []config.MCPToolConfig{
+				{
+					Server: "test_server",
+					Name:   "original-tool",
+				},
+			},
 		},
 		LLM: config.LLMConfig{
 			Type:    "original-type",
@@ -181,7 +231,12 @@ func TestMergeCommandLineArgsWithEmptyValues(t *testing.T) {
 	// 验证原始值保持不变
 	assert.Equal(t, "original-proxy", cfg.Proxy)
 	assert.Equal(t, "original-config.json", cfg.MCP.ConfigFile)
-	assert.Equal(t, []string{"original-tool"}, cfg.MCP.Tools)
+	assert.Equal(t, []config.MCPToolConfig{
+		{
+			Server: "test_server",
+			Name:   "original-tool",
+		},
+	}, cfg.MCP.Tools)
 	assert.Equal(t, "original-type", cfg.LLM.Type)
 	assert.Equal(t, "original-url", cfg.LLM.BaseURL)
 	assert.Equal(t, "original-model", cfg.LLM.Model)
@@ -200,7 +255,12 @@ func TestSaveConfigIfNeeded(t *testing.T) {
 		Proxy: "test-proxy",
 		MCP: config.MCPConfig{
 			ConfigFile: "test-mcp.json",
-			Tools:      []string{"test-tool"},
+			Tools: []config.MCPToolConfig{
+				{
+					Server: "test_server",
+					Name:   "test-tool",
+				},
+			},
 		},
 		LLM: config.LLMConfig{
 			Type:    "ollama",
@@ -343,4 +403,46 @@ func TestParseCommandLineArgsStructure(t *testing.T) {
 	// 验证解析的值
 	assert.Equal(t, "test task", *args.Task)
 	assert.Equal(t, "http://proxy.com", *args.Proxy)
+}
+
+// TestGetTools tests the GetTools method in Config
+// 测试获取工具的功能，特别是内置工具的处理
+func TestGetTools(t *testing.T) {
+	// 跳过此测试，因为它需要访问配置信息
+	t.Skip("Skipping test that requires external configuration")
+
+	// 初始化配置
+	cfg := config.NewDefaultConfig()
+
+	// 添加工具配置
+	cfg.MCP.Tools = []config.MCPToolConfig{
+		{
+			Server: "inner",
+			Name:   "sequentialthinking",
+		},
+		{
+			Server: "test_server", // 一个不存在的服务器
+			Name:   "test_tool",
+		},
+	}
+
+	// 调用GetTools方法
+	tools, cleanup, err := cfg.GetTools(context.Background())
+	defer cleanup()
+
+	// 验证结果
+	if err != nil {
+		t.Errorf("GetTools failed: %v", err)
+	}
+
+	// 检查工具数量，应该至少有1个（内置工具）
+	if len(tools) < 1 {
+		t.Errorf("Expected at least 1 tool, got %d", len(tools))
+	}
+
+	// 打印获取到的工具
+	for i, tool := range tools {
+		info, _ := tool.Info(context.Background())
+		t.Logf("Tool #%d: %s", i+1, info.Name)
+	}
 }

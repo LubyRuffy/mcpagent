@@ -152,6 +152,11 @@ func NewMCPHubFromSettings(ctx context.Context, settings *MCPSettings) (*MCPHub,
 // It iterates through the configuration and establishes connections to each enabled server.
 func (h *MCPHub) initializeServers(ctx context.Context) error {
 	for name, config := range h.config.MCPServers {
+		if name == "inner" {
+			log.Printf("跳过内置工具服务器: %s", name)
+			continue
+		}
+
 		if config.Disabled {
 			log.Printf("跳过已禁用的服务器: %s", name)
 			continue

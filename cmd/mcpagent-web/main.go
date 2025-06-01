@@ -22,6 +22,7 @@ import (
 
 	"github.com/LubyRuffy/mcpagent/pkg/database"
 	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
+	"github.com/LubyRuffy/mcpagent/pkg/services"
 	"github.com/LubyRuffy/mcpagent/pkg/webserver"
 )
 
@@ -126,6 +127,14 @@ func main() {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
 	log.Printf("数据库初始化成功: %s", *args.DBPath)
+
+	// 同步内置工具到数据库
+	log.Println("开始同步内置工具到数据库...")
+	if err := services.SyncInternalToolsWithDatabase(context.Background()); err != nil {
+		log.Printf("警告: 同步内置工具失败: %v", err)
+	} else {
+		log.Println("内置工具同步成功")
+	}
 
 	// Print startup information
 	printStartupInfo(addr)

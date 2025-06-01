@@ -60,7 +60,7 @@ func migrateAppConfigAddMCPSettings() error {
 			// 设置默认MCP配置
 			defaultMCPConfig := &models.MCPConfig{
 				ConfigFile: "",
-				Tools:      []string{},
+				Tools:      []models.MCPToolConfig{},
 			}
 
 			if err := config.SetMCPConfig(defaultMCPConfig); err != nil {

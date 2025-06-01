@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { AppConfig, ConfigState, SystemPromptTemplate, MCPServer, LLMConfigModel, CreateLLMConfigForm, MCPServerConfigModel, CreateMCPServerConfigForm, SystemPromptModel, CreateSystemPromptForm } from '@/types/config'
+import type { AppConfig, ConfigState, SystemPromptTemplate, MCPServer, MCPToolConfig, LLMConfigModel, CreateLLMConfigForm, MCPServerConfigModel, CreateMCPServerConfigForm, SystemPromptModel, CreateSystemPromptForm } from '@/types/config'
 import { validateConfig } from '@/utils/storage'
 import { llmApi, mcpApi, configApi, systemPromptApi } from '@/utils/api'
 import type { ApiResponse } from '@/utils/api'
@@ -141,15 +141,28 @@ export const useConfigStore = defineStore('config', () => {
         };
       }
 
-      // 工具加载完成后，检查并转换用户选择的工具名称
-      // 如果工具名称包含服务器前缀(server_tool格式)，将其转换为原始工具名称
+      // 检查工具配置格式是否正确
+      // 如果是旧版本的字符串数组格式，需要转换为新的MCPToolConfig格式
       if (config.value.mcp.tools && config.value.mcp.tools.length > 0) {
-        console.log('【配置】检查工具名称格式', config.value.mcp.tools)
-        const hasServerToolFormat = config.value.mcp.tools.some(toolName => toolName.includes('_'))
-        if (hasServerToolFormat) {
-          console.log('【配置】发现server_tool格式的工具名称，执行转换')
-          config.value.mcp.tools = getOriginalToolNames(config.value.mcp.tools)
-          console.log('【配置】转换后的工具名称:', config.value.mcp.tools)
+        console.log('【配置】检查工具配置格式', config.value.mcp.tools)
+        
+        // 检查是否是旧的字符串数组格式
+        if (typeof config.value.mcp.tools[0] === 'string') {
+          console.log('【配置】发现旧的字符串数组格式，转换为MCPToolConfig格式')
+          
+          // 将字符串数组转换为MCPToolConfig数组
+          const toolConfigs = (config.value.mcp.tools as unknown as string[]).map(toolName => {
+            // 尝试从availableTools中查找对应的服务器信息
+            const tool = availableTools.value.find(t => t.name === toolName);
+            return {
+              server: tool?.server || 'inner',
+              name: toolName
+            };
+          });
+          
+          // 更新配置
+          config.value.mcp.tools = toolConfigs;
+          console.log('【配置】转换后的工具配置:', config.value.mcp.tools)
         }
       }
 
@@ -178,14 +191,9 @@ export const useConfigStore = defineStore('config', () => {
       }
 
       // 创建配置副本用于保存
-      const configToSave = { ...config.value }
+      const configToSave = JSON.parse(JSON.stringify(config.value))
       
-      // 确保保存的是原始工具名称格式，而不是server_tool格式
-      // 检查是否有工具名称包含下划线(可能是server_tool格式)
-      const hasServerToolFormat = configToSave.mcp.tools.some(toolName => toolName.includes('_'))
-      if (hasServerToolFormat) {
-        configToSave.mcp.tools = getOriginalToolNames(configToSave.mcp.tools)
-      }
+      // 无需进行格式转换，现在直接使用MCPToolConfig格式
 
       // 将配置保存到后端
       const response = await configApi.updateConfig(configToSave)
@@ -240,122 +248,37 @@ export const useConfigStore = defineStore('config', () => {
     config.value.placeholders = { ...config.value.placeholders, ...placeholders }
   }
 
-  const selectTools = (tools: string[]) => {
-    config.value.mcp.tools = tools
+  const selectTools = (toolNames: string[]) => {
+    // 将工具名称列表转换为 MCPToolConfig 对象数组
+    config.value.mcp.tools = getToolConfigsFromNames(toolNames);
   }
 
   const updateAvailableTools = (tools: Array<{ name: string; description: string; server: string }>) => {
     availableTools.value = tools
   }
 
-  // 获取后端兼容的工具名称格式 (server_tool)
-  const getBackendCompatibleToolNames = (toolNames: string[]): string[] => {
+  // 将工具名称数组转换为MCPToolConfig对象数组
+  const getToolConfigsFromNames = (toolNames: string[]): MCPToolConfig[] => {
     if (!toolNames || toolNames.length === 0) {
-      return toolNames || [];
+      return [];
     }
     
-    // 确保availableTools已加载
-    if (!availableTools.value || availableTools.value.length === 0) {
-      console.warn('工具列表为空，无法转换工具名称');
-      return toolNames;
-    }
-    
-    // 简化版本：直接通过工具名查找对应的服务器
-    const result = toolNames.map(toolName => {
-      // 查找工具对应的服务器
+    return toolNames.map(toolName => {
       const tool = availableTools.value.find(t => t.name === toolName);
-      
-      if (tool && tool.server) {
-        // 如果找到对应服务器，返回 server_tool 格式
-        return `${tool.server}_${toolName}`;
-      }
-      
-      // 如果工具名已经是 server_tool 格式，检查是否有效
-      if (toolName.includes('_')) {
-        const parts = toolName.split('_');
-        const serverName = parts[0];
-        const pureTool = parts.slice(1).join('_');
-        
-        // 检查是否有效的服务器名称
-        if (mcpServerConfigs.value.some(s => s.name === serverName)) {
-          // 检查是否是有效的工具
-          if (availableTools.value.some(t => t.name === pureTool && t.server === serverName)) {
-            return toolName; // 已经是有效的 server_tool 格式
-          }
-        }
-      }
-      
-      // 如果找不到工具，尝试使用默认服务器
-      if (mcpServerConfigs.value && mcpServerConfigs.value.length > 0) {
-        const defaultServer = mcpServerConfigs.value.find(s => !s.disabled)?.name;
-        if (defaultServer) {
-          console.warn(`工具 ${toolName} 没有对应服务器，使用默认服务器 ${defaultServer}`);
-          return `${defaultServer}_${toolName}`;
-        }
-      }
-      
-      // 实在无法解析，返回原始名称
-      console.error(`无法为工具 ${toolName} 找到对应的服务器`);
-      return toolName;
+      return {
+        server: tool?.server || 'inner',
+        name: toolName
+      };
     });
-    
-    return result;
   }
 
-  // 从服务器_工具格式转换回原始工具名称格式
-  const getOriginalToolNames = (toolNames: string[]): string[] => {
-    if (!toolNames || toolNames.length === 0) {
-      return toolNames || [];
+  // 从MCPToolConfig对象数组中提取工具名称
+  const getToolNamesFromConfigs = (toolConfigs: MCPToolConfig[]): string[] => {
+    if (!toolConfigs || toolConfigs.length === 0) {
+      return [];
     }
     
-    // 如果可用工具列表为空，只能做简单的处理
-    if (!availableTools.value || availableTools.value.length === 0) {
-      // 简单地将 server_tool 格式转换为 tool 格式
-      return toolNames.map(toolName => {
-        if (toolName.includes('_')) {
-          const parts = toolName.split('_');
-          // 假设第一部分是服务器名，其余是工具名
-          return parts.slice(1).join('_');
-        }
-        return toolName;
-      });
-    }
-    
-    // 简化版本：检查是否是 server_tool 格式，如果是则提取工具名
-    return toolNames.map(toolName => {
-      // 如果不包含下划线，已经是原始工具名
-      if (!toolName.includes('_')) {
-        return toolName;
-      }
-      
-      // 检查是否是 server_tool 格式
-      const parts = toolName.split('_');
-      const serverName = parts[0];
-      const pureTool = parts.slice(1).join('_');
-      
-      // 验证这是否是有效的服务器
-      const isValidServer = mcpServerConfigs.value.some(s => s.name === serverName);
-      
-      if (isValidServer) {
-        // 检查是否是有效的工具
-        const isValidTool = availableTools.value.some(
-          t => t.name === pureTool && t.server === serverName
-        );
-        
-        if (isValidTool) {
-          return pureTool; // 提取出工具名
-        }
-      }
-      
-      // 如果找不到匹配，尝试在可用工具中查找完整名称
-      const exactMatch = availableTools.value.find(t => t.name === toolName);
-      if (exactMatch) {
-        return toolName; // 这是一个正确的工具名，包含下划线
-      }
-      
-      // 如果无法解析，返回原始名称
-      return toolName;
-    });
+    return toolConfigs.map(tool => tool.name);
   }
 
   // 获取用于后端任务执行的配置（工具名称转换为server_tool格式）
@@ -431,10 +354,7 @@ export const useConfigStore = defineStore('config', () => {
       };
     }
     
-    // 将工具列表转换为后端兼容格式
-    if (backendConfig.mcp.tools && backendConfig.mcp.tools.length > 0) {
-      backendConfig.mcp.tools = getBackendCompatibleToolNames(backendConfig.mcp.tools);
-    }
+    // 不需要转换，直接使用当前的工具配置格式
     
     return backendConfig;
   }
@@ -998,8 +918,8 @@ export const useConfigStore = defineStore('config', () => {
     updatePlaceholders,
     selectTools,
     updateAvailableTools,
-    getBackendCompatibleToolNames,
-    getOriginalToolNames,
+    getToolConfigsFromNames,
+    getToolNamesFromConfigs,
     getConfigForBackend,
     loadLLMConfigs,
     createLLMConfig,

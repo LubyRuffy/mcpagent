@@ -101,6 +101,9 @@ func initDefaultData() error {
 		log.Println("已创建默认LLM配置")
 	}
 
+	// 内置工具的同步将在数据库初始化后单独进行，不在此处处理
+	// 这是因为内置工具的同步需要依赖完整的应用上下文
+
 	// 检查是否已有MCP服务器配置
 	var mcpCount int64
 	if err := DB.Model(&models.MCPServerConfigModel{}).Count(&mcpCount).Error; err != nil {
@@ -170,7 +173,7 @@ func initDefaultData() error {
 		// 设置默认MCP配置
 		defaultMCPConfig := &models.MCPConfig{
 			ConfigFile: "",
-			Tools:      []string{},
+			Tools:      []models.MCPToolConfig{},
 		}
 		if err := defaultAppConfig.SetMCPConfig(defaultMCPConfig); err != nil {
 			return fmt.Errorf("设置默认MCP配置失败: %w", err)

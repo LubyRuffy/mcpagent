@@ -11,8 +11,14 @@ import (
 
 // MCPConfig 存储MCP的配置信息
 type MCPConfig struct {
-	ConfigFile string   `json:"config_file"`
-	Tools      []string `json:"tools"`
+	ConfigFile string          `json:"config_file"`
+	Tools      []MCPToolConfig `json:"tools"`
+}
+
+// MCPToolConfig 表示一个MCP工具的配置，包括服务器名称和工具名称
+type MCPToolConfig struct {
+	Server string `json:"server"` // 服务器名称
+	Name   string `json:"name"`   // 工具名称
 }
 
 // AppConfigModel represents a saved application configuration in the database.
@@ -82,7 +88,7 @@ func (a *AppConfigModel) SetPlaceHoldersFromMap(placeholders map[string]interfac
 func (a *AppConfigModel) GetMCPConfig() (*MCPConfig, error) {
 	if a.MCPSettings == "" {
 		return &MCPConfig{
-			Tools: []string{},
+			Tools: []MCPToolConfig{},
 		}, nil
 	}
 

@@ -145,28 +145,46 @@ func mergeCommandLineArgs(cfg *config.Config, args *CommandLineArgs) {
 	}
 }
 
-// parseToolsList parses comma-separated tools list into a slice.
+// parseToolsList parses comma-separated tools list into a slice of MCPToolConfig.
 // It handles whitespace trimming and empty string filtering.
-func parseToolsList(toolsStr string) []string {
+// 工具格式为 "server:tool_name"，如果不包含冒号，则默认使用内置服务器
+func parseToolsList(toolsStr string) []config.MCPToolConfig {
 	if strings.TrimSpace(toolsStr) == "" {
-		return []string{}
+		return []config.MCPToolConfig{}
 	}
 
-	tools := strings.Split(toolsStr, defaultToolsSeparator)
-	// Trim whitespace from each tool name
-	for i, tool := range tools {
-		tools[i] = strings.TrimSpace(tool)
-	}
+	toolSpecs := strings.Split(toolsStr, defaultToolsSeparator)
 
-	// Filter out empty strings
-	var filteredTools []string
-	for _, tool := range tools {
-		if tool != "" {
-			filteredTools = append(filteredTools, tool)
+	// 构建工具配置列表
+	var toolConfigs []config.MCPToolConfig
+	for _, toolSpec := range toolSpecs {
+		toolSpec = strings.TrimSpace(toolSpec)
+		if toolSpec == "" {
+			continue
+		}
+
+		// 解析服务器和工具名称
+		parts := strings.SplitN(toolSpec, ":", 2)
+		if len(parts) == 2 {
+			// 格式为 "server:tool_name"
+			server := strings.TrimSpace(parts[0])
+			toolName := strings.TrimSpace(parts[1])
+			if server != "" && toolName != "" {
+				toolConfigs = append(toolConfigs, config.MCPToolConfig{
+					Server: server,
+					Name:   toolName,
+				})
+			}
+		} else {
+			// 仅提供工具名称，使用内置服务器
+			toolConfigs = append(toolConfigs, config.MCPToolConfig{
+				Server: config.InnerServerName,
+				Name:   toolSpec,
+			})
 		}
 	}
 
-	return filteredTools
+	return toolConfigs
 }
 
 // saveConfigIfNeeded saves configuration to file if a config file path is provided

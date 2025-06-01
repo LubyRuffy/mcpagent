@@ -125,7 +125,10 @@ export default {
       toolsSelected: '{count} tools selected',
       noToolsSelectedInfo: 'No tools selected',
       toolSelectionFailed: 'Tool selection failed: {message}',
-      toolRemoveSuccess: 'Tool removed successfully'
+      toolRemoveSuccess: 'Tool removed successfully',
+      internalServer: 'Internal Server',
+      cannotEditInnerServer: 'Internal server cannot be edited',
+      cannotDeleteInnerServer: 'Internal server cannot be deleted'
     },
     prompt: {
       title: 'System Prompt',

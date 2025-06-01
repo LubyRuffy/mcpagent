@@ -125,7 +125,10 @@ export default {
       toolsSelected: '已选择 {count} 个工具',
       noToolsSelectedInfo: '未选择任何工具',
       toolSelectionFailed: '工具选择失败: {message}',
-      toolRemoveSuccess: '工具删除成功'
+      toolRemoveSuccess: '工具删除成功',
+      internalServer: '内置服务器',
+      cannotEditInnerServer: '内置服务器不能编辑',
+      cannotDeleteInnerServer: '内置服务器不能删除'
     },
     prompt: {
       title: '系统提示词',

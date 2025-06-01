@@ -202,7 +202,16 @@ func (s *AppConfigService) SaveToConfig(appConfig *models.AppConfigModel, target
 	if err == nil && mcpConfig != nil {
 		// 设置MCP配置
 		targetConfig.MCP.ConfigFile = mcpConfig.ConfigFile
-		targetConfig.MCP.Tools = mcpConfig.Tools
+
+		// 转换工具列表
+		var configTools []config.MCPToolConfig
+		for _, tool := range mcpConfig.Tools {
+			configTools = append(configTools, config.MCPToolConfig{
+				Server: tool.Server,
+				Name:   tool.Name,
+			})
+		}
+		targetConfig.MCP.Tools = configTools
 
 		// 注意: MCP服务器信息需要从MCPServerConfigService获取，这里不会覆盖
 		// 但会保留tools的选择
@@ -227,10 +236,19 @@ func (s *AppConfigService) LoadFromConfig(sourceConfig *config.Config, appConfig
 		return err
 	}
 
+	// 转换工具列表
+	var modelTools []models.MCPToolConfig
+	for _, tool := range sourceConfig.MCP.Tools {
+		modelTools = append(modelTools, models.MCPToolConfig{
+			Server: tool.Server,
+			Name:   tool.Name,
+		})
+	}
+
 	// 设置MCP配置
 	mcpConfig := &models.MCPConfig{
 		ConfigFile: sourceConfig.MCP.ConfigFile,
-		Tools:      sourceConfig.MCP.Tools,
+		Tools:      modelTools,
 	}
 	if err := appConfig.SetMCPConfig(mcpConfig); err != nil {
 		return err

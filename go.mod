@@ -7,6 +7,7 @@ require (
 	github.com/cloudwego/eino v0.3.27
 	github.com/cloudwego/eino-ext/components/model/ollama v0.0.0-20250522060253-ddb617598b09
 	github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250522060253-ddb617598b09
+	github.com/cloudwego/eino-ext/components/tool/sequentialthinking v0.0.0-20250530094010-bd1c4fc20bbe
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/mux v1.8.1
@@ -15,6 +16,8 @@ require (
 	github.com/rs/cors v1.11.1
 	github.com/spf13/viper v1.20.1
 	github.com/stretchr/testify v1.10.0
+	gorm.io/driver/sqlite v1.5.7
+	gorm.io/gorm v1.30.0
 )
 
 require (
@@ -65,6 +68,4 @@ require (
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/sqlite v1.5.7 // indirect
-	gorm.io/gorm v1.30.0 // indirect
 )

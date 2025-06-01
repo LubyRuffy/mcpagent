@@ -29,7 +29,20 @@ func NewMCPToolService() *MCPToolService {
 // GetAllActiveTools returns all active tools from the database
 func (s *MCPToolService) GetAllActiveTools() ([]models.MCPToolModel, error) {
 	var tools []models.MCPToolModel
+	// 加载所有活跃的工具，并预加载Server关联
 	err := s.db.Preload("Server").Where("is_active = ?", true).Find(&tools).Error
+
+	// 确保工具记录的服务器关联正确
+	for i, tool := range tools {
+		if tool.Server.ID == 0 {
+			// 如果服务器未加载，尝试单独加载
+			var server models.MCPServerConfigModel
+			if err := s.db.Where("id = ?", tool.ServerID).First(&server).Error; err == nil {
+				tools[i].Server = server
+			}
+		}
+	}
+
 	return tools, err
 }
 

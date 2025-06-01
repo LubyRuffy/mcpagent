@@ -70,10 +70,15 @@ export interface MCPServer {
   status?: 'connected' | 'disconnected' | 'connecting' | 'error'
 }
 
+export interface MCPToolConfig {
+  server: string
+  name: string
+}
+
 export interface MCPConfig {
   config_file?: string
   mcp_servers?: Record<string, MCPServer>
-  tools: string[]
+  tools: MCPToolConfig[]
 }
 
 export interface ProxyConfig {

@@ -34,23 +34,26 @@
 
         <div class="selected-tools-list">
           <div
-              v-for="toolName in selectedTools"
-              :key="toolName"
+              v-for="combinedName in selectedTools"
+              :key="combinedName"
               class="selected-tool-item"
           >
             <div class="tool-info">
-              <div class="tool-name" @click="toggleToolDescription(toolName)">{{ toolName }}
-                <el-icon class="expand-icon" :class="{ 'expanded': expandedTools.has(toolName) }">
+              <div class="tool-name" @click="toggleToolDescription(combinedName)">
+                {{ getToolDisplayName(combinedName) }}
+                <span class="server-tag" :title="getToolServer(combinedName)">
+                  {{ getToolServer(combinedName) }}
+                </span>
+                <el-icon class="expand-icon" :class="{ 'expanded': expandedTools.has(combinedName) }">
                   <ArrowDown />
                 </el-icon>
               </div>
-              <div class="tool-server">{{ getToolServer(toolName) }}</div>
 
               <div
-                  v-if="expandedTools.has(toolName)"
+                  v-if="expandedTools.has(combinedName)"
                   class="tool-description-content"
               >
-                {{ getToolDescription(toolName) }}
+                {{ getToolDescription(combinedName) }}
               </div>
             </div>
 
@@ -58,7 +61,7 @@
                 size="small"
                 type="danger"
                 circle
-                @click="removeTool(toolName)"
+                @click="removeTool(combinedName)"
                 class="delete-btn"
             >
               <el-icon><Delete /></el-icon>
@@ -213,7 +216,7 @@
             class="tool-tree"
         >
           <template #default="{ node, data }">
-            <div class="tree-node">
+            <div class="tree-node" :class="{ 'inner-server-node': data.isServer && data.isInnerServer }">
               <div class="node-content">
                 <div class="node-label">{{ data.label }}</div>
                 <div v-if="data.description" class="node-description">
@@ -223,18 +226,21 @@
               <!-- 服务器节点的操作按钮 -->
               <div v-if="data.isServer" class="server-actions">
                 <el-button
+                    v-if="!data.isInnerServer"
                     size="small"
                     @click.stop="editServerInToolDialog(data.serverName)"
                 >
                   {{ $t('common.edit') }}
                 </el-button>
                 <el-button
+                    v-if="!data.isInnerServer"
                     size="small"
                     type="danger"
                     @click.stop="removeServerInToolDialog(data.serverName)"
                 >
                   {{ $t('common.delete') }}
                 </el-button>
+                <el-tag v-if="data.isInnerServer" type="info" size="small">{{ $t('config.mcp.internalServer') }}</el-tag>
               </div>
             </div>
           </template>
@@ -294,7 +300,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, Delete } from '@element-plus/icons-vue'
 import { useConfigStore } from '@/stores/config'
 import { mcpApi } from '@/utils/api'
-import type { MCPServer, MCPConfig } from '@/types/config'
+import type { MCPServer, MCPConfig, MCPToolConfig } from '@/types/config'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -335,15 +341,64 @@ const treeProps = {
   label: 'label'
 }
 
+// 选中的工具列表，只保存工具名称，方便处理
+const selectedTools = ref<string[]>([]);
+
+// 获取用户真实选择的工具
+const loadSelectedToolsFromBackend = async () => {
+  try {
+    console.log('【工具】开始从后端加载已选择的工具...', new Date().toISOString());
+    
+    // 加载可用工具列表
+    await configStore.loadToolsFromDatabase();
+    console.log('【工具】可用工具列表加载完成:', configStore.availableTools.length);
+    
+    // 从配置中获取工具列表
+    await configStore.loadConfiguration(true);
+    console.log('【工具】从后端加载的配置:', configStore.config);
+    
+    // 从配置中提取工具信息
+    const toolList: string[] = [];
+    
+    // 处理工具数据
+    if (configStore.config.mcp.tools && configStore.config.mcp.tools.length > 0) {
+      // 使用any类型暂时解决类型问题
+      const mcpTools: any[] = configStore.config.mcp.tools;
+      
+      mcpTools.forEach(tool => {
+        try {
+          let toolName: string;
+          let serverName: string;
+          
+          if (typeof tool === 'object' && tool !== null) {
+            toolName = tool.name;
+            serverName = tool.server || 'inner';
+          } else {
+            toolName = String(tool);
+            const matchedTool = configStore.availableTools.find(t => t.name === toolName);
+            serverName = matchedTool?.server || 'inner';
+          }
+          
+          // 使用"工具名@服务器名"格式
+          toolList.push(`${toolName}@${serverName}`);
+        } catch (e) {
+          console.warn('【工具】处理工具数据失败:', e, tool);
+        }
+      });
+    }
+    
+    console.log('【工具】从后端加载的已选择工具:', toolList);
+    selectedTools.value = toolList;
+  } catch (error) {
+    console.error('【工具】加载已选择工具失败:', error);
+    ElMessage.error(t('error.loadSelectedToolsFailed'));
+  }
+};
+
 // 计算属性
 const mcpConfig = computed({
   get: () => configStore.config.mcp,
   set: (value: MCPConfig) => configStore.updateMCPConfig(value)
-})
-
-const selectedTools = computed({
-  get: () => configStore.selectedTools,
-  set: (value: string[]) => configStore.selectTools(value)
 })
 
 // 计算活跃服务器数量和总服务器数量
@@ -393,6 +448,8 @@ const serverDialogWidth = computed(() => {
 // 构建工具树数据
 const toolTreeData = computed(() => {
   const treeData: any[] = []
+  // 用于存储inner服务器节点
+  let innerServerNode: any = null
 
   console.log('【工具树】开始构建工具树数据...', new Date().toISOString())
   console.log('【工具树】可用工具列表详情:', JSON.stringify(configStore.availableTools))
@@ -411,12 +468,17 @@ const toolTreeData = computed(() => {
   })
   console.log('【工具树】工具按服务器分布:', toolServerCounts)
 
+  // 记录所有遇到的服务器名称，以便找出不在配置中的服务器
+  const processedServers = new Set<string>()
+
   // 遍历所有数据库中的MCP服务器配置
   configStore.mcpServerConfigs.forEach(serverConfig => {
     if (!serverConfig.is_active) {
       console.log(`【工具树】服务器 ${serverConfig.name} 未激活，跳过`)
       return
     }
+
+    processedServers.add(serverConfig.name)
 
     let args: string[] = []
     try {
@@ -431,6 +493,7 @@ const toolTreeData = computed(() => {
       label: serverConfig.name,
       isServer: true,
       serverName: serverConfig.name,
+      isInnerServer: serverConfig.name === 'inner', // 标记内置服务器
       description: `${serverConfig.command} ${args.join(' ')}`,
       children: [] as any[]
     }
@@ -452,20 +515,85 @@ const toolTreeData = computed(() => {
     }
 
     serverTools.forEach(tool => {
+      // 创建唯一ID，格式为 tool_[工具名]_[服务器名]，确保在不同服务器上的同名工具能够被区分
+      const uniqueId = `tool_${tool.name}_${serverConfig.name}`
       serverNode.children.push({
-        id: `tool_${tool.name}`,
+        id: uniqueId,
         label: tool.name,
         description: tool.description,
         serverName: serverConfig.name,
         toolName: tool.name,
-        isServer: false
+        isServer: false,
+        // 保存组合名称，方便后续处理
+        combinedName: `${tool.name}@${serverConfig.name}`
       })
     })
 
-    // 总是添加服务器节点，即使没有工具
-    treeData.push(serverNode)
-    console.log(`【工具树】已添加服务器 ${serverConfig.name} 到工具树`)
+    // 如果是inner服务器，保存到innerServerNode变量，等待置顶
+    if (serverConfig.name === 'inner') {
+      innerServerNode = serverNode
+      console.log(`【工具树】数据库中的inner服务器将被置顶显示`)
+    } else {
+      // 添加其他服务器节点
+      treeData.push(serverNode)
+      console.log(`【工具树】已添加服务器 ${serverConfig.name} 到工具树`)
+    }
   })
+
+  // 处理不在数据库配置中但在工具列表中出现的服务器（如inner）
+  const serversInTools = new Set(configStore.availableTools.map(tool => tool.server))
+  
+  for (const serverName of serversInTools) {
+    if (!processedServers.has(serverName)) {
+      console.log(`【工具树】发现未在数据库配置中的服务器: ${serverName}`)
+      
+      // 为这个服务器创建一个节点
+      const serverNode = {
+        id: `server_${serverName}`,
+        label: serverName,
+        isServer: true,
+        serverName: serverName,
+        isInnerServer: serverName === 'inner', // 标记内置服务器
+        description: serverName === 'inner' ? '内置工具服务器' : '外部工具服务器',
+        children: [] as any[]
+      }
+      
+      // 获取该服务器下的工具
+      const serverTools = configStore.availableTools.filter(tool => tool.server === serverName)
+      console.log(`【工具树】服务器 ${serverName} 的工具数量: ${serverTools.length}`)
+      
+      serverTools.forEach(tool => {
+        // 创建唯一ID，格式为 tool_[工具名]_[服务器名]
+        const uniqueId = `tool_${tool.name}_${serverName}`
+        serverNode.children.push({
+          id: uniqueId,
+          label: tool.name,
+          description: tool.description,
+          serverName: serverName,
+          toolName: tool.name,
+          isServer: false,
+          // 保存组合名称，方便后续处理
+          combinedName: `${tool.name}@${serverName}`
+        })
+      })
+      
+      // 如果是inner服务器，保存到innerServerNode变量
+      if (serverName === 'inner') {
+        innerServerNode = serverNode
+        console.log(`【工具树】未配置的inner服务器将被置顶显示`)
+      } else {
+        // 添加其他服务器节点
+        treeData.push(serverNode)
+        console.log(`【工具树】已添加服务器 ${serverName} 到工具树`)
+      }
+    }
+  }
+
+  // 如果找到了inner服务器，将其放在数组最前面
+  if (innerServerNode) {
+    treeData.unshift(innerServerNode)
+    console.log(`【工具树】inner服务器已置顶`)
+  }
 
   console.log('【工具树】最终树形数据:', treeData)
   return treeData
@@ -491,6 +619,12 @@ const getStatusText = (status?: string) => {
 }
 
 const editServer = (name: string) => {
+  // 禁止编辑inner服务器
+  if (name === 'inner') {
+    ElMessage.warning(t('config.mcp.cannotEditInnerServer'))
+    return
+  }
+
   const serverConfig = configStore.mcpServerConfigs.find(config => config.name === name)
   if (!serverConfig) return
 
@@ -521,6 +655,12 @@ const editServer = (name: string) => {
 }
 
 const removeServer = async (name: string) => {
+  // 禁止删除inner服务器
+  if (name === 'inner') {
+    ElMessage.warning(t('config.mcp.cannotDeleteInnerServer'))
+    return
+  }
+
   try {
     await ElMessageBox.confirm(
         t('config.mcp.deleteServerConfirm', { name }),
@@ -633,21 +773,62 @@ const handleToolsChange = (tools: string[]) => {
   configStore.selectTools(tools)
 }
 
-const getToolDescription = (toolName: string) => {
-  // 1. 直接查找精确匹配的工具
+// 获取工具显示名称（去除服务器信息）
+const getToolDisplayName = (combinedName: string) => {
+  const parts = combinedName.split('@');
+  return parts[0]; // 只返回工具名部分
+}
+
+// 获取工具服务器名称
+const getToolServer = (combinedName: string) => {
+  const parts = combinedName.split('@');
+  if (parts.length > 1) {
+    return parts[1]; // 返回服务器名部分
+  }
+  
+  // 兼容旧数据格式
+  const toolName = parts[0];
+  const exactMatch = configStore.availableTools.find(t => t.name === toolName);
+  if (exactMatch) {
+    return exactMatch.server || '';
+  }
+  
+  // 如果没有精确匹配，检查工具名是否包含已知工具名作为前缀
+  for (const tool of configStore.availableTools) {
+    if (toolName.startsWith(tool.name) && tool.name.length > 3) {
+      return tool.server || '';
+    }
+  }
+  
+  const matchingTools = configStore.availableTools.filter(t => 
+    toolName.includes(t.name) || t.name.includes(toolName)
+  );
+  
+  if (matchingTools.length > 0) {
+    matchingTools.sort((a, b) => b.name.length - a.name.length);
+    return matchingTools[0].server || '';
+  }
+  
+  return '';
+}
+
+const getToolDescription = (combinedName: string) => {
+  const toolName = getToolDisplayName(combinedName);
+  
+  // 直接查找精确匹配的工具
   const exactMatch = configStore.availableTools.find(t => t.name === toolName);
   if (exactMatch) {
     return exactMatch.description || '';
   }
   
-  // 2. 如果没有精确匹配，检查工具名是否包含已知工具名作为前缀
+  // 如果没有精确匹配，检查工具名是否包含已知工具名作为前缀
   for (const tool of configStore.availableTools) {
     if (toolName.startsWith(tool.name) && tool.name.length > 3) {
       return tool.description || '';
     }
   }
   
-  // 3. 如果上述匹配都失败，查找部分匹配的工具
+  // 如果上述匹配都失败，查找部分匹配的工具
   const matchingTools = configStore.availableTools.filter(t => 
     toolName.includes(t.name) || t.name.includes(toolName)
   );
@@ -662,99 +843,157 @@ const getToolDescription = (toolName: string) => {
   return '';
 }
 
-const getToolServer = (toolName: string) => {
-  // 1. 直接查找精确匹配的工具
-  const exactMatch = configStore.availableTools.find(t => t.name === toolName);
-  if (exactMatch) {
-    return exactMatch.server || '';
+const removeTool = async (combinedName: string) => {
+  try {
+    const newSelectedTools = selectedTools.value.filter(name => name !== combinedName);
+    
+    // 提取工具名称
+    const toolNames = newSelectedTools.map(name => {
+      const parts = name.split('@');
+      return parts[0]; // 只取工具名部分
+    });
+    
+    // 更新到configStore
+    configStore.selectTools(toolNames);
+    
+    // 保存到配置
+    await configStore.saveConfiguration();
+    console.log('【工具】工具选择保存成功');
+    
+    // 更新本地UI
+    selectedTools.value = newSelectedTools;
+    ElMessage.success(t('config.mcp.toolRemoveSuccess'));
+    
+    // 重新加载最新的工具选择状态
+    setTimeout(() => {
+      loadSelectedToolsFromBackend();
+    }, 1000);
+  } catch (error) {
+    console.error('【工具】删除工具失败:', error);
+    ElMessage.error(t('config.mcp.toolRemoveFailed'));
   }
-  
-  // 2. 如果没有精确匹配，检查工具名是否包含已知工具名作为前缀
-  // 例如 "ddg-search_fetch" 可能对应于 "ddg-search" 工具
-  for (const tool of configStore.availableTools) {
-    if (toolName.startsWith(tool.name) && tool.name.length > 3) {
-      // 确保不会因为短名称产生错误匹配
-      return tool.server || '';
-    }
-  }
-  
-  // 3. 如果上述匹配都失败，查找部分匹配的工具，并按名称长度排序
-  // 优先使用最长匹配，这样更可能是正确的工具
-  const matchingTools = configStore.availableTools.filter(t => 
-    toolName.includes(t.name) || t.name.includes(toolName)
-  );
-  
-  if (matchingTools.length > 0) {
-    // 按工具名长度排序，优先使用最长的匹配
-    matchingTools.sort((a, b) => b.name.length - a.name.length);
-    return matchingTools[0].server || '';
-  }
-  
-  // 找不到匹配，返回空字符串
-  return '';
 }
 
-const   removeTool = (toolName: string) => {
-    const newSelectedTools = selectedTools.value.filter(name => name !== toolName)
-    configStore.selectTools(newSelectedTools)
-    ElMessage.success(t('config.mcp.toolRemoveSuccess'))
-  }
-
-const toggleToolDescription = (toolName: string) => {
-  if (expandedTools.value.has(toolName)) {
-    expandedTools.value.delete(toolName)
+const toggleToolDescription = (combinedName: string) => {
+  if (expandedTools.value.has(combinedName)) {
+    expandedTools.value.delete(combinedName)
   } else {
-    expandedTools.value.add(toolName)
+    expandedTools.value.add(combinedName)
   }
 }
 
 const getDefaultCheckedKeys = () => {
   const checkedKeys: string[] = []
-  selectedTools.value.forEach(toolName => {
-    checkedKeys.push(`tool_${toolName}`)
+  
+  // 更新工具-服务器映射关系
+  updateToolServerMap()
+  
+  // 遍历已选择的工具
+  selectedTools.value.forEach(combinedName => {
+    try {
+      let toolName, serverName
+      
+      // 处理不同格式的工具名
+      if (typeof combinedName === 'string') {
+        if (combinedName.includes('@')) {
+          [toolName, serverName] = combinedName.split('@')
+        } else {
+          toolName = combinedName
+          serverName = getActualToolServer(toolName)
+        }
+      } else if (combinedName && typeof combinedName === 'object') {
+        toolName = combinedName.name
+        serverName = combinedName.server
+      }
+      
+      if (toolName && serverName) {
+        // 使用新的节点ID格式: tool_[工具名]_[服务器名]
+        const nodeId = `tool_${toolName}_${serverName}`
+        console.log(`【工具选择】预选中工具: ${toolName}, 服务器: ${serverName}, 节点ID: ${nodeId}`)
+        checkedKeys.push(nodeId)
+      }
+    } catch (e) {
+      console.error('【工具选择】处理工具选择状态失败:', e, combinedName)
+    }
   })
+  
+  console.log('【工具选择】默认选中的节点:', checkedKeys)
   return checkedKeys
 }
 
 const handleToolTreeCheck = (data: any, checked: any) => {
-  // 这里可以添加额外的检查逻辑
+  // 记录选中状态变更
+  console.log('【工具选择】选中状态变更:', data, checked)
 }
 
-const confirmToolSelection = () => {
+const confirmToolSelection = async () => {
   try {
     if (!toolTreeRef.value) {
-      console.error('【工具选择】工具树引用不存在')
-      ElMessage.error('工具选择失败: 工具树组件未加载')
-      return
+      console.error('【工具选择】工具树引用不存在');
+      ElMessage.error('工具选择失败: 工具树组件未加载');
+      return;
     }
     
-    const checkedNodes = toolTreeRef.value.getCheckedNodes()
-    console.log('【工具选择】选中的节点:', checkedNodes)
+    const checkedNodes = toolTreeRef.value.getCheckedNodes();
+    console.log('【工具选择】选中的节点详情:', checkedNodes);
     
-    const selectedToolNames: string[] = []
+    // 只处理工具节点，跳过服务器节点
+    const toolNodes = checkedNodes.filter((node: any) => !node.isServer && node.toolName && node.serverName);
+    console.log('【工具选择】过滤后的工具节点:', toolNodes);
+    
+    const selectedCombinedNames: string[] = [];
+    const selectedToolObjects: Array<{name: string, server: string}> = [];
 
-    checkedNodes.forEach((node: any) => {
-      if (node.toolName) {
-        console.log(`【工具选择】添加工具: ${node.toolName}, 服务器: ${node.serverName}`)
-        selectedToolNames.push(node.toolName)
+    toolNodes.forEach((node: any) => {
+      const toolName = node.toolName;
+      const serverName = node.serverName;
+      
+      if (toolName && serverName) {
+        console.log(`【工具选择】添加工具: ${toolName}, 服务器: ${serverName}`);
+        
+        // 使用combinedName属性，如果存在的话
+        const combinedName = node.combinedName || `${toolName}@${serverName}`;
+        selectedCombinedNames.push(combinedName);
+        
+        // 保存工具名和服务器名
+        selectedToolObjects.push({
+          name: toolName,
+          server: serverName
+        });
+        
+        // 更新工具服务器映射
+        toolServerMap.value.set(toolName, serverName);
       }
-    })
+    });
 
-    // 只更新用户明确选择的工具，不要重新加载数据
-    console.log('【工具选择】最终选择的工具列表:', selectedToolNames)
-    configStore.selectTools(selectedToolNames)
-    showAddToolDialog.value = false
+    // 更新到configStore，使用MCPToolConfig格式
+    configStore.config.mcp.tools = selectedToolObjects;
     
-    if (selectedToolNames.length > 0) {
-      ElMessage.success(t('config.mcp.toolsSelected', { count: selectedToolNames.length }))
-          } else {
-        ElMessage.info(t('config.mcp.noToolsSelectedInfo'))
+    // 保存到配置
+    await configStore.saveConfiguration();
+    console.log('【工具选择】工具选择保存成功');
+    
+    // 更新本地UI
+    selectedTools.value = selectedCombinedNames;
+    
+    // 关闭对话框
+    showAddToolDialog.value = false;
+    
+    if (selectedCombinedNames.length > 0) {
+      ElMessage.success(t('config.mcp.toolsSelected', { count: selectedCombinedNames.length }));
+    } else {
+      ElMessage.info(t('config.mcp.noToolsSelectedInfo'));
     }
+    
+    // 重新加载最新的工具选择状态
+    setTimeout(() => {
+      loadSelectedToolsFromBackend();
+    }, 1000);
   } catch (error) {
-    console.error('【工具选择】确认选择时出错:', error)
+    console.error('【工具选择】确认选择时出错:', error);
     ElMessage.error(t('config.mcp.toolSelectionFailed', {
       message: error instanceof Error ? error.message : t('error.unknown')
-    }))
+    }));
   }
 }
 
@@ -780,6 +1019,9 @@ const openAddToolDialog = async () => {
       console.log('【工具】工具数量:', configStore.availableTools.length, new Date().toISOString())
       console.log('【工具】工具列表内容:', JSON.stringify(configStore.availableTools))
       console.log('【工具】当前选择的工具:', configStore.selectedTools, new Date().toISOString())
+      
+      // 更新工具-服务器映射关系
+      updateToolServerMap()
       
       // 无论是否有工具，都显示工具选择对话框
       setTimeout(() => {
@@ -888,6 +1130,42 @@ const refreshTree = () => {
     }
   })
 }
+
+// 声明工具映射关系缓存
+const toolServerMap = ref<Map<string, string>>(new Map())
+
+// 更新工具和服务器的映射关系
+const updateToolServerMap = () => {
+  // 先清空缓存
+  toolServerMap.value.clear()
+  
+  // 从树中获取所有工具和对应的服务器
+  configStore.availableTools.forEach(tool => {
+    if (tool.name && tool.server) {
+      toolServerMap.value.set(tool.name, tool.server)
+    }
+  })
+  
+  console.log('【工具映射】更新工具-服务器映射关系:', Object.fromEntries(toolServerMap.value))
+}
+
+// 获取工具的真实服务器名称
+const getActualToolServer = (toolName: string): string => {
+  // 如果工具名中已包含服务器信息，直接解析
+  if (toolName.includes('@')) {
+    const parts = toolName.split('@')
+    return parts[1] || ''
+  }
+  
+  // 从映射缓存中查询
+  return toolServerMap.value.get(toolName) || ''
+}
+
+// 组件挂载时更新工具映射并加载已选择的工具
+onMounted(() => {
+  updateToolServerMap()
+  loadSelectedToolsFromBackend()
+})
 
 // 组件挂载时不需要重复加载数据，因为App.vue的loadConfiguration()已经加载过了
 </script>
@@ -1208,5 +1486,34 @@ const refreshTree = () => {
 .debug-info ul {
   margin: 0;
   padding-left: 16px;
+}
+
+/* inner服务器样式 */
+.inner-server-node {
+  background-color: rgba(var(--el-color-primary-rgb), 0.1);
+  border-radius: 4px;
+  padding: 4px;
+  border-left: 3px solid var(--el-color-primary);
+}
+
+.inner-server-node .node-label {
+  font-weight: bold;
+  color: var(--el-color-primary);
+}
+
+.server-tag {
+  font-size: 10px;
+  color: var(--el-color-primary);
+  background-color: rgba(var(--el-color-primary-rgb), 0.1);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 4px;
+  display: inline-block;
+  border: 1px solid rgba(var(--el-color-primary-rgb), 0.2);
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 </style>

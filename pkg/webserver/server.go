@@ -179,7 +179,7 @@ func (s *Server) setupRoutes() {
 	// MCP工具管理API
 	api.HandleFunc("/mcp/tools", s.handleGetMCPTools).Methods("POST")
 	api.HandleFunc("/mcp/tools/configured", s.handleGetMCPToolsFromDB).Methods("GET")
-	api.HandleFunc("/mcp/tools/cached", s.handleGetCachedMCPTools).Methods("GET")
+	api.HandleFunc("/mcp/tools/cached", s.handleGetMCPToolsFromDB).Methods("GET") // 重新添加cached端点
 	api.HandleFunc("/mcp/tools/sync", s.handleSyncMCPTools).Methods("POST")
 	api.HandleFunc("/mcp/tools/sync/{id:[0-9]+}", s.handleSyncMCPToolsForServer).Methods("POST")
 
@@ -474,6 +474,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		log.Printf("警告：获取默认配置失败: %v", err)
 	}
 
+	// 配置中的工具必须包含完整的服务器和工具名称信息
+
 	// 返回当前配置
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(s.config)
@@ -562,6 +564,8 @@ func (s *Server) handleExecuteTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "配置信息不能为空，必须由前端页面提供", http.StatusBadRequest)
 		return
 	}
+
+	// 所有工具必须都包含服务器名称和工具名称
 
 	// 验证配置
 	if err := taskReq.Config.Validate(); err != nil {
@@ -1000,72 +1004,8 @@ func (s *Server) handleGetMCPTools(w http.ResponseWriter, r *http.Request) {
 
 // handleGetMCPToolsFromDB handles GET /api/mcp/tools/configured
 func (s *Server) handleGetMCPToolsFromDB(w http.ResponseWriter, r *http.Request) {
-	// 从数据库获取所有活跃的MCP服务器配置
-	configs, err := s.mcpServerConfigService.GetAllActiveConfigs()
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(MCPToolsResponse{
-			Success: false,
-			Message: "获取MCP服务器配置失败",
-			Error:   err.Error(),
-		})
-		return
-	}
-
-	if len(configs) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(MCPToolsResponse{
-			Success: true,
-			Message: "没有找到活跃的MCP服务器配置",
-			Tools:   []MCPToolInfo{},
-		})
-		return
-	}
-
-	// 将数据库配置转换为mcphost.ServerConfig格式
-	mcpServers := make(map[string]mcphost.ServerConfig)
-	for name, config := range configs {
-		serverConfig, err := config.ToServerConfig()
-		if err != nil {
-			log.Printf("转换服务器配置失败 %s: %v", name, err)
-			continue
-		}
-		mcpServers[name] = serverConfig
-	}
-
-	// 创建MCPSettings
-	settings := &mcphost.MCPSettings{
-		MCPServers: mcpServers,
-	}
-
-	// 使用连接池获取MCP服务器连接
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// 获取连接池
-	pool := mcphost.GetConnectionPool()
-
-	// 获取或创建连接
-	hub, err := pool.GetHub(ctx, settings)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(MCPToolsResponse{
-			Success: false,
-			Message: "连接MCP服务器失败",
-			Error:   err.Error(),
-		})
-		return
-	}
-	// 注意：不再直接调用hub.CloseServers()，而是在使用完后释放引用
-	defer pool.ReleaseHub(settings)
-
-	// 获取所有可用工具
-	var tools []MCPToolInfo
-
-	// 获取工具映射
-	toolsMap, err := hub.GetToolsMap(ctx)
+	// 获取数据库中的所有工具，包括内置工具
+	toolsInfo, err := s.mcpToolService.GetToolsInfo()
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -1077,17 +1017,104 @@ func (s *Server) handleGetMCPToolsFromDB(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// 处理工具信息
-	for toolKey, toolInfo := range toolsMap {
-		// 从工具键中提取服务器名称
-		parts := strings.SplitN(toolKey, "_", 2)
-		serverName := parts[0]
-
+	// 转换为API响应格式
+	var tools []MCPToolInfo
+	for _, toolInfo := range toolsInfo {
 		tools = append(tools, MCPToolInfo{
 			Name:        toolInfo.Name,
-			Description: toolInfo.Desc,
-			Server:      serverName,
+			Description: toolInfo.Description,
+			Server:      toolInfo.Server,
 		})
+	}
+
+	// 如果没有工具，还需要连接服务器获取
+	if len(tools) == 0 {
+		// 从数据库获取所有活跃的MCP服务器配置
+		configs, err := s.mcpServerConfigService.GetAllActiveConfigs()
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(MCPToolsResponse{
+				Success: false,
+				Message: "获取MCP服务器配置失败",
+				Error:   err.Error(),
+			})
+			return
+		}
+
+		if len(configs) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(MCPToolsResponse{
+				Success: true,
+				Message: "没有找到活跃的MCP服务器配置或工具",
+				Tools:   []MCPToolInfo{},
+			})
+			return
+		}
+
+		// 将数据库配置转换为mcphost.ServerConfig格式
+		mcpServers := make(map[string]mcphost.ServerConfig)
+		for name, config := range configs {
+			serverConfig, err := config.ToServerConfig()
+			if err != nil {
+				log.Printf("转换服务器配置失败 %s: %v", name, err)
+				continue
+			}
+			mcpServers[name] = serverConfig
+		}
+
+		// 创建MCPSettings
+		settings := &mcphost.MCPSettings{
+			MCPServers: mcpServers,
+		}
+
+		// 使用连接池获取MCP服务器连接
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// 获取连接池
+		pool := mcphost.GetConnectionPool()
+
+		// 获取或创建连接
+		hub, err := pool.GetHub(ctx, settings)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(MCPToolsResponse{
+				Success: false,
+				Message: "连接MCP服务器失败",
+				Error:   err.Error(),
+			})
+			return
+		}
+		// 注意：不再直接调用hub.CloseServers()，而是在使用完后释放引用
+		defer pool.ReleaseHub(settings)
+
+		// 获取工具映射
+		toolsMap, err := hub.GetToolsMap(ctx)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(MCPToolsResponse{
+				Success: false,
+				Message: "获取工具列表失败",
+				Error:   err.Error(),
+			})
+			return
+		}
+
+		// 处理工具信息
+		for toolKey, toolInfo := range toolsMap {
+			// 从工具键中提取服务器名称
+			parts := strings.SplitN(toolKey, "_", 2)
+			serverName := parts[0]
+
+			tools = append(tools, MCPToolInfo{
+				Name:        toolInfo.Name,
+				Description: toolInfo.Desc,
+				Server:      serverName,
+			})
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1290,39 +1317,6 @@ func (s *Server) handleDeleteMCPServerConfig(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "MCP服务器配置删除成功",
-	})
-}
-
-// handleGetCachedMCPTools handles GET /api/mcp/tools/cached
-// 从数据库缓存中获取工具列表，不连接MCP服务器
-func (s *Server) handleGetCachedMCPTools(w http.ResponseWriter, r *http.Request) {
-	toolsInfo, err := s.mcpToolService.GetToolsInfo()
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(MCPToolsResponse{
-			Success: false,
-			Message: "获取缓存工具列表失败",
-			Error:   err.Error(),
-		})
-		return
-	}
-
-	// 转换为API响应格式
-	var tools []MCPToolInfo
-	for _, toolInfo := range toolsInfo {
-		tools = append(tools, MCPToolInfo{
-			Name:        toolInfo.Name,
-			Description: toolInfo.Description,
-			Server:      toolInfo.Server,
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(MCPToolsResponse{
-		Success: true,
-		Message: fmt.Sprintf("成功获取 %d 个缓存工具", len(tools)),
-		Tools:   tools,
 	})
 }
 

@@ -40,6 +40,7 @@ import (
 	"strings"
 
 	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
+	"github.com/LubyRuffy/mcpagent/pkg/models"
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
@@ -112,7 +113,13 @@ var mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPS
 type MCPConfig struct {
 	ConfigFile string                          `mapstructure:"config_file" json:"config_file" yaml:"config_file"` // MCP服务器配置文件路径
 	MCPServers map[string]mcphost.ServerConfig `mapstructure:"mcp_servers" json:"mcp_servers" yaml:"mcp_servers"` // MCP服务器直接配置
-	Tools      []string                        `mapstructure:"tools" json:"tools" yaml:"tools"`                   // 工具列表
+	Tools      []MCPToolConfig                 `mapstructure:"tools" json:"tools" yaml:"tools"`                   // 工具配置列表
+}
+
+// MCPToolConfig 表示一个MCP工具的配置，包括服务器名称和工具名称
+type MCPToolConfig struct {
+	Server string `mapstructure:"server" json:"server" yaml:"server"` // 服务器名称
+	Name   string `mapstructure:"name" json:"name" yaml:"name"`       // 工具名称
 }
 
 // Validate validates the MCP configuration.
@@ -316,41 +323,100 @@ func (c *Config) createOllamaModel(ctx context.Context, httpClient *http.Client)
 //	}
 //	defer cleanup() // Important: always call cleanup
 func (c *Config) GetTools(ctx context.Context) ([]tool.BaseTool, func(), error) {
-	// 连接mcp服务器
-	var mcpHub MCPHubInterface
-	var err error
+	var einoTools []tool.BaseTool
+	var cleanupFuncs []func()
 
-	// 如果MCPServers不为nil，则优先使用MCPServers配置（即使为空）
-	if c.MCP.MCPServers != nil {
-		// 创建MCPSettings
-		settings := &mcphost.MCPSettings{
-			MCPServers: c.MCP.MCPServers,
+	log.Printf("【工具调试】开始获取工具，工具配置: %+v", c.MCP.Tools)
+
+	// 1. 获取内置工具
+	internalTools, err := GetInternalTools(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("获取内置工具失败: %w", err)
+	}
+
+	// 将内置工具添加到工具列表
+	einoTools = append(einoTools, internalTools...)
+	log.Printf("【工具调试】添加了 %d 个内置工具", len(internalTools))
+
+	// 2. 连接MCP服务器并获取工具（如果配置了）
+	if len(c.MCP.Tools) > 0 || len(c.MCP.MCPServers) > 0 || c.MCP.ConfigFile != "" {
+		// 连接mcp服务器
+		var mcpHub MCPHubInterface
+		var err error
+
+		// 如果MCPServers不为nil，则优先使用MCPServers配置（即使为空）
+		if c.MCP.MCPServers != nil {
+			// 创建MCPSettings
+			settings := &mcphost.MCPSettings{
+				MCPServers: c.MCP.MCPServers,
+			}
+
+			// 使用MCPSettings创建MCPHub
+			mcpHub, err = mcpHubFromSettingsFactory(ctx, settings)
+			log.Printf("【工具调试】使用MCPSettings创建Hub，服务器数量: %d", len(c.MCP.MCPServers))
+		} else {
+			// 否则使用ConfigFile
+			mcpHub, err = mcpHubFactory(ctx, c.MCP.ConfigFile)
+			log.Printf("【工具调试】使用ConfigFile创建Hub: %s", c.MCP.ConfigFile)
 		}
 
-		// 使用MCPSettings创建MCPHub
-		mcpHub, err = mcpHubFromSettingsFactory(ctx, settings)
-	} else {
-		// 否则使用ConfigFile
-		mcpHub, err = mcpHubFactory(ctx, c.MCP.ConfigFile)
+		if err != nil {
+			// 如果连接MCP服务器失败，记录错误但继续使用内置工具
+			log.Printf("连接MCP服务器失败: %v，将仅使用内置工具", err)
+		} else {
+			// 添加MCP服务器清理函数
+			cleanupFuncs = append(cleanupFuncs, func() {
+				if closeErr := mcpHub.CloseServers(); closeErr != nil {
+					log.Printf("关闭MCP服务器失败: %v", closeErr)
+				}
+			})
+
+			// 从配置中提取工具名称列表
+			var toolNameList []string
+			var nonInnerToolNameList []string
+			log.Printf("【工具调试】开始处理工具列表，工具数量: %d", len(c.MCP.Tools))
+
+			for i, toolConfig := range c.MCP.Tools {
+				log.Printf("【工具调试】处理工具 [%d]: {名称=%s, 服务器=%s}", i, toolConfig.Name, toolConfig.Server)
+
+				// 使用服务器名称和工具名称生成工具键
+				toolKey := models.GenerateToolKey(toolConfig.Server, toolConfig.Name)
+				toolNameList = append(toolNameList, toolKey)
+
+				// 过滤掉inner服务器的工具，因为它们已经通过GetInternalTools获取
+				if toolConfig.Server != "inner" && !strings.HasPrefix(toolKey, "inner_") {
+					nonInnerToolNameList = append(nonInnerToolNameList, toolKey)
+				}
+
+				log.Printf("【工具调试】生成工具键: %s", toolKey)
+			}
+
+			log.Printf("【工具调试】最终工具列表: %v", toolNameList)
+			log.Printf("【工具调试】非内置工具列表: %v", nonInnerToolNameList)
+
+			// 仅获取非inner工具
+			if len(nonInnerToolNameList) > 0 {
+				// 获取MCP工具
+				mcpTools, err := mcpHub.GetEinoTools(ctx, nonInnerToolNameList)
+				if err != nil {
+					log.Printf("获取MCP工具失败: %v，将仅使用内置工具", err)
+				} else {
+					// 将MCP工具添加到工具列表
+					einoTools = append(einoTools, mcpTools...)
+					log.Printf("【工具调试】添加了 %d 个MCP工具", len(mcpTools))
+				}
+			}
+		}
 	}
 
-	if err != nil {
-		return nil, nil, fmt.Errorf("连接MCP服务器失败: %w", err)
-	}
-
+	// 创建合并的清理函数
 	cleanupFunc := func() {
-		if closeErr := mcpHub.CloseServers(); closeErr != nil {
-			log.Printf("关闭MCP服务器失败: %v", closeErr)
+		for _, fn := range cleanupFuncs {
+			fn()
 		}
 	}
 
-	// Initialize the required tools
-	einoTools, err := mcpHub.GetEinoTools(ctx, c.MCP.Tools)
-	if err != nil {
-		cleanupFunc()
-		return nil, nil, fmt.Errorf("获取MCP工具失败: %w", err)
-	}
-
+	log.Printf("【工具调试】最终返回 %d 个工具", len(einoTools))
 	return einoTools, cleanupFunc, nil
 }
 
@@ -411,7 +477,7 @@ func NewDefaultConfig() *Config {
 	return &Config{
 		MCP: MCPConfig{
 			MCPServers: make(map[string]mcphost.ServerConfig),
-			Tools:      []string{},
+			Tools:      []MCPToolConfig{},
 		},
 		LLM: LLMConfig{
 			Type:    LLMProviderOllama,
