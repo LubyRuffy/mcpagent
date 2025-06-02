@@ -27,22 +27,26 @@ const (
 
 // Result defines a search query result type.
 type Result struct {
-	Title string
-	Info  string
-	Ref   string
+	Title string `json:"title"`
+	Info  string `json:"info"`
+	Ref   string `json:"ref"`
 }
 
 const DuckDuckGoURL = "https://html.duckduckgo.com/html/"
 
 type ddgWebSearchInput struct {
-	Query   string
-	Page    int
-	Timeout time.Duration
+	Query   string `json:"query"`
+	Page    int    `json:"page,omitempty"`
+	Timeout int    `json:"timeout,omitempty"`
 }
 
 func ddgWebSearch(ctx context.Context, input ddgWebSearchInput) (urls []Result, err error) {
+	if input.Timeout == 0 {
+		input.Timeout = 30
+	}
+
 	c := http.Client{
-		Timeout: input.Timeout,
+		Timeout: time.Duration(input.Timeout) * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

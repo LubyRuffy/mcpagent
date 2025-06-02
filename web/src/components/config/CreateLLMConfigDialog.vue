@@ -5,7 +5,7 @@
     :title="isEdit ? '编辑LLM配置' : '新建LLM配置'"
     width="600px"
     :before-close="handleClose"
-    :z-index="9999"
+    :z-index="2000"
     :append-to-body="true"
     :lock-scroll="true"
   >
@@ -40,14 +40,12 @@
 
       <!-- LLM类型 -->
       <el-form-item label="LLM类型" prop="type">
-        <el-select
-          v-model="form.type"
-          @change="handleTypeChange"
-          style="width: 100%"
-        >
-          <el-option label="OpenAI" value="openai" />
-          <el-option label="Ollama" value="ollama" />
-        </el-select>
+        <div class="select-wrapper">
+          <el-radio-group v-model="form.type" @change="handleTypeChange" style="width: 100%">
+            <el-radio :value="'openai'" label="OpenAI" />
+            <el-radio :value="'ollama'" label="Ollama" />
+          </el-radio-group>
+        </div>
       </el-form-item>
 
       <!-- Base URL -->
@@ -191,12 +189,13 @@ const rules: FormRules = {
 }
 
 // 方法
-const handleTypeChange = (type: string) => {
-  if (type === 'ollama') {
+const handleTypeChange = (type: string | number | boolean | undefined) => {
+  const typeStr = type as string
+  if (typeStr === 'ollama') {
     form.base_url = 'http://127.0.0.1:11434'
     form.model = 'qwen3:14b'
     form.api_key = 'ollama'
-  } else if (type === 'openai') {
+  } else if (typeStr === 'openai') {
     form.base_url = 'https://api.openai.com/v1'
     form.model = 'gpt-4'
     form.api_key = ''
@@ -316,6 +315,16 @@ watch(() => props.visible, (newVal) => {
 
 :deep(.el-radio__input) {
   margin-right: 4px;
+}
+
+.select-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.select-wrapper .el-radio-group {
+  display: flex;
+  width: 100%;
 }
 
 .advanced-toggle {
