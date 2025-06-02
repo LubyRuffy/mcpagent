@@ -3,10 +3,12 @@ module github.com/LubyRuffy/mcpagent
 go 1.24.2
 
 require (
+	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/eino v0.3.27
 	github.com/cloudwego/eino-ext/components/model/ollama v0.0.0-20250522060253-ddb617598b09
 	github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250522060253-ddb617598b09
+	github.com/cloudwego/eino-ext/components/tool/duckduckgo v0.0.0-20250530094010-bd1c4fc20bbe
 	github.com/cloudwego/eino-ext/components/tool/sequentialthinking v0.0.0-20250530094010-bd1c4fc20bbe
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/golang/mock v1.6.0
@@ -21,6 +23,7 @@ require (
 )
 
 require (
+	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250519084852-38fafa73d9ea // indirect
@@ -65,7 +68,8 @@ require (
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

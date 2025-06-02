@@ -33,7 +33,7 @@ func NewInternalToolService() *InternalToolService {
 // This function should be called during application startup.
 func (s *InternalToolService) SyncInternalTools(ctx context.Context) error {
 	// 获取内置工具
-	internalTools, err := config.GetInternalTools(ctx)
+	internalTools, err := config.GetInternalTools(ctx, "")
 	if err != nil {
 		return fmt.Errorf("获取内置工具失败: %w", err)
 	}

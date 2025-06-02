@@ -329,7 +329,7 @@ func (c *Config) GetTools(ctx context.Context) ([]tool.BaseTool, func(), error) 
 	log.Printf("【工具调试】开始获取工具，工具配置: %+v", c.MCP.Tools)
 
 	// 1. 获取内置工具
-	internalTools, err := GetInternalTools(ctx)
+	internalTools, err := GetInternalTools(ctx, c.Proxy)
 	if err != nil {
 		return nil, nil, fmt.Errorf("获取内置工具失败: %w", err)
 	}
