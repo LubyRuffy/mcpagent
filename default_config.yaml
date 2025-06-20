@@ -6,23 +6,31 @@ llm:
 max_step: 20
 mcp:
   mcp_servers:
-    ddg-search:
-      args:
-        - duckduckgo-mcp-server
-      command: uvx
+    # sequential-thinking:
+    #   args:
+    #     - -y
+    #     - "@modelcontextprotocol/server-sequential-thinking"
+    #   command: npx
+    # ddg-search:
+    #   args:
+    #     - duckduckgo-mcp-server
+    #   command: uvx
     fetch:
       args:
         - mcp-server-fetch
       command: uvx
-    sequential-thinking:
-      args:
-        - -y
-        - "@modelcontextprotocol/server-sequential-thinking"
-      command: npx
+
   tools:
-    - fetch_fetch
-    - ddg-search_search
-    - sequential-thinking_sequentialthinking
+    - server: inner
+      name: sequentialthinking
+    - server: inner
+      name: search
+    - server: fetch
+      name: fetch
+    # - server: ddg-search
+    #   name: search
+    # - server: sequential-thinking
+    #   name: sequentialthinking
 proxy: ""
 placeholders:
   field: "网络安全研究领域"

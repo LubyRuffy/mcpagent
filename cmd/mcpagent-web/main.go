@@ -111,22 +111,14 @@ func printStartupInfo(addr string) {
 	log.Println("========================")
 }
 
-// main is the entry point of the web application
-func main() {
-	// Parse command line arguments
-	args := parseCommandLineArgs()
-
-	// Construct server address
-	addr := fmt.Sprintf("%s:%s", *args.Host, *args.Port)
-	if *args.Host == "" {
-		addr = ":" + *args.Port
-	}
-
+// runServer runs the web server
+// it will use the provided context for cancellation and signal handling
+func runServer(ctx context.Context, addr string, dbPath string) error {
 	// Initialize database
-	if err := database.InitDatabase(*args.DBPath); err != nil {
+	if err := database.InitDatabase(dbPath); err != nil {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
-	log.Printf("数据库初始化成功: %s", *args.DBPath)
+	log.Printf("数据库初始化成功: %s", dbPath)
 
 	// 同步内置工具到数据库
 	log.Println("开始同步内置工具到数据库...")
@@ -136,16 +128,7 @@ func main() {
 		log.Println("内置工具同步成功")
 	}
 
-	// Print startup information
-	printStartupInfo(addr)
-
 	log.Println("Web服务器启动成功，配置将由前端页面提供")
-
-	// Setup context and signal handling
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	setupSignalHandling(cancel)
 
 	// Start web server
 	if err := startWebServer(ctx, addr); err != nil {
@@ -173,4 +156,24 @@ func main() {
 	}
 
 	log.Println("Web服务器已关闭")
+	return nil
+}
+
+// main is the entry point of the web application
+func main() {
+	// Parse command line arguments
+	args := parseCommandLineArgs()
+
+	// Construct server address
+	addr := fmt.Sprintf("%s:%s", *args.Host, *args.Port)
+	if *args.Host == "" {
+		addr = ":" + *args.Port
+	}
+
+	// Print startup information
+	printStartupInfo(addr)
+
+	if err := runServer(context.Background(), addr, *args.DBPath); err != nil {
+		log.Fatalf("Web服务器运行失败: %v", err)
+	}
 }

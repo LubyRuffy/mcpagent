@@ -68,6 +68,7 @@ const (
 	errMsgFormatMsgFailed   = "格式化消息失败: %w"
 	errMsgGenerateOutFailed = "生成输出失败: %w"
 	errMsgSerializeFrame    = "序列化流帧失败: %w"
+	errMsgStreamFailed      = "流处理失败: %w"
 )
 
 // Notify defines the interface for handling various types of notifications
@@ -98,6 +99,16 @@ type Notify interface {
 	// OnError sends an error notification when something goes wrong
 	// This should be used for all error conditions during execution
 	OnError(err error)
+}
+
+// StreamingNotify extends Notify interface with streaming capabilities
+// allowing handlers to process streaming data chunks as they arrive.
+type StreamingNotify interface {
+	Notify
+
+	// OnStreamResult receives a chunk of the result stream during execution
+	// This is called for each chunk of the streaming response
+	OnStreamResult(chunk string)
 }
 
 // LoggerCallback implements the callback interface for logging and notification
@@ -244,7 +255,13 @@ func (cb *LoggerCallback) handleGenericTool(toolName string, arguments map[strin
 // Returns:
 //   - context.Context: The same context (no modifications)
 func (cb *LoggerCallback) OnEnd(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
-	// Currently no specific handling needed for OnEnd
+	// For message output, notify with content
+	if message, ok := output.(*schema.Message); ok && message.Role == schema.Assistant && message.Content != "" {
+		// Check if we have a streaming notify interface
+		if streamNotify, ok := cb.notify.(StreamingNotify); ok {
+			streamNotify.OnStreamResult(message.Content)
+		}
+	}
 	return ctx
 }
 
@@ -314,8 +331,8 @@ func (cb *LoggerCallback) handleStreamOutput(info *callbacks.RunInfo, output *sc
 }
 
 // processStreamFrame processes a single frame from the stream output.
-// It serializes the frame and logs it if it's from the main graph.
-// This helps with debugging and monitoring agent execution.
+// It handles different types of frames including messages and tool calls.
+// For messages, it extracts the content and notifies through the streaming interface.
 //
 // Parameters:
 //   - info: Runtime information about the callback
@@ -324,13 +341,23 @@ func (cb *LoggerCallback) handleStreamOutput(info *callbacks.RunInfo, output *sc
 // Returns:
 //   - error: Error if frame processing fails
 func (cb *LoggerCallback) processStreamFrame(info *callbacks.RunInfo, frame callbacks.CallbackOutput) error {
-	frameData, err := json.Marshal(frame)
-	if err != nil {
-		return fmt.Errorf(errMsgSerializeFrame, err)
+	// Check if we have a streaming notify interface for more granular notifications
+	streamNotify, isStreamingNotify := cb.notify.(StreamingNotify)
+
+	// Handle message streaming
+	if message, ok := frame.(*schema.Message); ok && message.Role == schema.Assistant {
+		// Send stream chunks to the streaming notifier if available
+		if isStreamingNotify && message.Content != "" {
+			streamNotify.OnStreamResult(message.Content)
+		}
 	}
 
-	// 仅打印 graph 的输出, 否则每个 stream 节点的输出都会打印一遍
+	// Debug logging
 	if info.Name == react.GraphName {
+		frameData, err := json.Marshal(frame)
+		if err != nil {
+			return fmt.Errorf(errMsgSerializeFrame, err)
+		}
 		fmt.Printf("%s: %s\n", info.Name, string(frameData))
 	}
 
@@ -408,6 +435,129 @@ func Run(ctx context.Context, cfg *config.Config, task string, notify Notify) er
 
 	// 执行任务
 	return executeAgentTask(ctx, cfg, ragent, task, notify)
+}
+
+// RunStream executes an MCP Agent task with streaming response capabilities.
+// It returns a stream reader for the agent's output, allowing real-time processing
+// of the agent's responses as they're generated.
+//
+// This function is similar to Run but optimized for streaming use cases where
+// immediate response chunks are needed for real-time UI updates or further processing.
+//
+// Parameters:
+//   - ctx: Context for controlling execution flow and cancellation
+//   - cfg: Configuration containing model, tool, and system settings
+//   - task: Task description to execute (must not be empty)
+//   - notify: Notification handler for progress updates and stream results
+//
+// Returns:
+//   - *schema.StreamReader[*schema.Message]: Stream reader for the agent's output
+//   - error: Error if execution fails at any stage
+//
+// Example:
+//
+//	notify := &mcpagent.StreamCliNotifier{}
+//	stream, err := mcpagent.RunStream(ctx, cfg, "分析这个网站的安全性", notify)
+//	if err != nil {
+//		log.Printf("任务执行失败: %v", err)
+//		return
+//	}
+//
+//	// Process the stream in real-time
+//	for {
+//		chunk, err := stream.Recv()
+//		if errors.Is(err, io.EOF) {
+//			break // End of stream
+//		}
+//		if err != nil {
+//			log.Printf("流处理错误: %v", err)
+//			break
+//		}
+//		// Process chunk...
+//	}
+func RunStream(ctx context.Context, cfg *config.Config, task string, notify StreamingNotify) (*schema.StreamReader[*schema.Message], error) {
+	// 输入参数验证
+	if err := validateRunParameters(cfg, task, notify); err != nil {
+		return nil, err
+	}
+
+	// 获取工具
+	einoTools, cleanup, err := cfg.GetTools(ctx)
+	if err != nil {
+		return nil, fmt.Errorf(errMsgGetToolsFailed, err)
+	}
+
+	// Create a context with cleanup to ensure tools are properly released
+	ctx = context.WithValue(ctx, "cleanup", cleanup)
+
+	// Register context cleanup when the stream completes
+	cleanupFunc := func() {
+		if cleanupFn, ok := ctx.Value("cleanup").(func()); ok {
+			cleanupFn()
+		}
+	}
+
+	// 获取模型
+	toolableChatModel, err := cfg.GetModel(ctx)
+	if err != nil {
+		cleanup() // Ensure cleanup if we fail here
+		return nil, fmt.Errorf(errMsgGetModelFailed, err)
+	}
+
+	// 创建agent
+	ragent, err := createReActAgent(ctx, cfg, einoTools, toolableChatModel)
+	if err != nil {
+		cleanup() // Ensure cleanup if we fail here
+		return nil, fmt.Errorf(errMsgCreateAgentFailed, err)
+	}
+
+	// 创建并格式化消息
+	chatTemplate := prompt.FromMessages(schema.FString,
+		&schema.Message{
+			Role:    schema.System,
+			Content: cfg.SystemPrompt,
+		},
+		&schema.Message{
+			Role:    schema.User,
+			Content: task,
+		})
+
+	// 格式化消息
+	placeHolders := map[string]any{
+		"date": time.Now().Format("2006-01-02"),
+	}
+	for k, v := range cfg.PlaceHolders {
+		placeHolders[k] = v
+	}
+
+	msg, err := chatTemplate.Format(ctx, placeHolders)
+	if err != nil {
+		cleanup() // Ensure cleanup if we fail here
+		return nil, fmt.Errorf(errMsgFormatMsgFailed, err)
+	}
+
+	// 生成流输出
+	streamOutput, err := ragent.Stream(ctx, msg, agent.WithComposeOptions(
+		compose.WithCallbacks(&LoggerCallback{
+			notify: notify,
+		})))
+	if err != nil {
+		cleanup() // Ensure cleanup if we fail here
+		return nil, fmt.Errorf(errMsgStreamFailed, err)
+	}
+
+	// Simply return the stream output with deferred cleanup handling
+	// The caller is responsible for closing the stream
+	go func() {
+		// This goroutine will keep the stream alive until it's fully consumed
+		// or closed by the caller
+		defer cleanupFunc()
+
+		// Ensure the context cancellation also triggers cleanup
+		<-ctx.Done()
+	}()
+
+	return streamOutput, nil
 }
 
 // validateRunParameters validates the input parameters for the Run function.
@@ -504,15 +654,50 @@ func executeAgentTask(ctx context.Context, cfg *config.Config, ragent *react.Age
 		return fmt.Errorf(errMsgFormatMsgFailed, err)
 	}
 
-	// 生成输出
-	output, err := ragent.Generate(ctx, msg, agent.WithComposeOptions(
-		compose.WithCallbacks(&LoggerCallback{
-			notify: notify,
-		})))
-	if err != nil {
-		return fmt.Errorf(errMsgGenerateOutFailed, err)
-	}
+	// Check if we're dealing with a streaming notifier
+	if _, isStreamingNotify := notify.(StreamingNotify); isStreamingNotify {
+		// Use streaming API for StreamingNotify implementations
+		streamOutput, err := ragent.Stream(ctx, msg, agent.WithComposeOptions(
+			compose.WithCallbacks(&LoggerCallback{
+				notify: notify,
+			})))
+		if err != nil {
+			return fmt.Errorf(errMsgStreamFailed, err)
+		}
+		defer streamOutput.Close()
 
-	notify.OnResult(output.Content)
-	return nil
+		// Collect the final complete output
+		var finalOutput *schema.Message
+		for {
+			chunk, err := streamOutput.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return fmt.Errorf(errMsgStreamFailed, err)
+			}
+
+			// Keep the latest message
+			finalOutput = chunk
+		}
+
+		// Notify with the final complete output
+		if finalOutput != nil {
+			notify.OnResult(finalOutput.Content)
+		}
+
+		return nil
+	} else {
+		// For non-streaming notifiers, use the regular Generate method
+		output, err := ragent.Generate(ctx, msg, agent.WithComposeOptions(
+			compose.WithCallbacks(&LoggerCallback{
+				notify: notify,
+			})))
+		if err != nil {
+			return fmt.Errorf(errMsgGenerateOutFailed, err)
+		}
+
+		notify.OnResult(output.Content)
+		return nil
+	}
 }
