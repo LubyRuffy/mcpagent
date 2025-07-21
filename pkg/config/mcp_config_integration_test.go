@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
+	"github.com/LubyRuffy/einomcphost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +15,7 @@ func TestMCPConfigIntegration(t *testing.T) {
 		// 创建包含mcp_servers的配置
 		cfg := &Config{
 			MCP: MCPConfig{
-				MCPServers: map[string]mcphost.ServerConfig{
+				MCPServers: map[string]*einomcphost.ServerConfig{
 					"test-server": {
 						TransportType: "stdio",
 						Command:       "echo",
@@ -25,7 +25,12 @@ func TestMCPConfigIntegration(t *testing.T) {
 						},
 					},
 				},
-				Tools: []string{"test-tool"},
+				Tools: []MCPToolConfig{
+					{
+						Server: "test-server",
+						Name:   "test-tool",
+					},
+				},
 			},
 			LLM: LLMConfig{
 				Type:    LLMProviderOllama,
@@ -57,8 +62,8 @@ func TestMCPConfigIntegration(t *testing.T) {
 		// 创建空的mcp_servers配置
 		cfg := &Config{
 			MCP: MCPConfig{
-				MCPServers: make(map[string]mcphost.ServerConfig),
-				Tools:      []string{},
+				MCPServers: make(map[string]*einomcphost.ServerConfig),
+				Tools:      []MCPToolConfig{},
 			},
 			LLM: LLMConfig{
 				Type:    LLMProviderOllama,
@@ -84,7 +89,7 @@ func TestMCPConfigIntegration(t *testing.T) {
 			MCP: MCPConfig{
 				MCPServers: nil,
 				ConfigFile: "", // 空的ConfigFile
-				Tools:      []string{},
+				Tools:      []MCPToolConfig{},
 			},
 			LLM: LLMConfig{
 				Type:    LLMProviderOllama,
@@ -123,8 +128,8 @@ func TestMCPConfigIntegration(t *testing.T) {
 		}()
 
 		// 创建模拟函数
-		var capturedSettings *mcphost.MCPSettings
-		mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPSettings) (MCPHubInterface, error) {
+		var capturedSettings *einomcphost.MCPSettings
+		mcpHubFromSettingsFactory = func(ctx context.Context, settings *einomcphost.MCPSettings) (MCPHubInterface, error) {
 			capturedSettings = settings
 			// 返回错误而不是nil，避免空指针
 			return nil, assert.AnError
@@ -132,21 +137,31 @@ func TestMCPConfigIntegration(t *testing.T) {
 
 		cfg := &Config{
 			MCP: MCPConfig{
-				MCPServers: map[string]mcphost.ServerConfig{
+				MCPServers: map[string]*einomcphost.ServerConfig{
 					"test-server": {
 						TransportType: "stdio",
 						Command:       "echo",
 					},
 				},
-				Tools: []string{"test-tool"},
+				Tools: []MCPToolConfig{
+					{
+						Server: "test-server",
+						Name:   "test-tool",
+					},
+				},
 			},
 		}
 
 		ctx := context.Background()
-		_, _, err := cfg.GetTools(ctx)
+		tools, cleanup, err := cfg.GetTools(ctx)
 
-		// 我们期望这里会有错误（因为我们返回了错误）
-		assert.Error(t, err, "应该有错误因为我们返回了错误")
+		// GetTools方法在MCP连接失败时不会返回错误，而是继续使用内置工具
+		assert.NoError(t, err, "GetTools应该成功返回内置工具，即使MCP连接失败")
+		assert.NotNil(t, tools, "应该返回工具列表（至少包含内置工具）")
+		assert.NotNil(t, cleanup, "应该返回清理函数")
+		if cleanup != nil {
+			cleanup()
+		}
 
 		// 验证传递给mcpHubFromSettingsFactory的参数
 		require.NotNil(t, capturedSettings, "应该调用了mcpHubFromSettingsFactory")
@@ -163,7 +178,12 @@ func TestMCPConfigBackwardCompatibility(t *testing.T) {
 			MCP: MCPConfig{
 				ConfigFile: "test_mcpservers.json",
 				MCPServers: nil, // nil表示不使用mcp_servers
-				Tools:      []string{"test-tool"},
+				Tools: []MCPToolConfig{
+					{
+						Server: "test-server",
+						Name:   "test-tool",
+					},
+				},
 			},
 			LLM: LLMConfig{
 				Type:    LLMProviderOllama,
@@ -192,7 +212,7 @@ func TestMCPConfigBackwardCompatibility(t *testing.T) {
 		settingsFactoryCalled := false
 		fileFactoryCalled := false
 
-		mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPSettings) (MCPHubInterface, error) {
+		mcpHubFromSettingsFactory = func(ctx context.Context, settings *einomcphost.MCPSettings) (MCPHubInterface, error) {
 			settingsFactoryCalled = true
 			return nil, assert.AnError
 		}
@@ -205,21 +225,33 @@ func TestMCPConfigBackwardCompatibility(t *testing.T) {
 		cfg := &Config{
 			MCP: MCPConfig{
 				ConfigFile: "test_mcpservers.json", // 有config_file
-				MCPServers: map[string]mcphost.ServerConfig{ // 也有mcp_servers
+				MCPServers: map[string]*einomcphost.ServerConfig{ // 也有mcp_servers
 					"test-server": {
 						TransportType: "stdio",
 						Command:       "echo",
 					},
 				},
-				Tools: []string{"test-tool"},
+				Tools: []MCPToolConfig{
+					{
+						Server: "test-server",
+						Name:   "test-tool",
+					},
+				},
 			},
 		}
 
 		ctx := context.Background()
-		_, _, err := cfg.GetTools(ctx)
+		tools, cleanup, err := cfg.GetTools(ctx)
+
+		// GetTools方法在MCP连接失败时不会返回错误，而是继续使用内置工具
+		assert.NoError(t, err, "GetTools应该成功返回内置工具，即使MCP连接失败")
+		assert.NotNil(t, tools, "应该返回工具列表（至少包含内置工具）")
+		assert.NotNil(t, cleanup, "应该返回清理函数")
+		if cleanup != nil {
+			cleanup()
+		}
 
 		// 验证调用了正确的工厂函数
-		assert.Error(t, err, "应该有错误因为我们返回了nil")
 		assert.True(t, settingsFactoryCalled, "应该调用了mcpHubFromSettingsFactory")
 		assert.False(t, fileFactoryCalled, "不应该调用mcpHubFactory")
 	})

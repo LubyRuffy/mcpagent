@@ -3,7 +3,7 @@ package models
 import (
 	"testing"
 
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
+	"github.com/LubyRuffy/einomcphost"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -65,7 +65,7 @@ func TestMCPServerConfigModel_ToServerConfig(t *testing.T) {
 	serverConfig, err := config.ToServerConfig()
 	assert.NoError(t, err)
 
-	expected := mcphost.ServerConfig{
+	expected := einomcphost.ServerConfig{
 		Command:  "uvx",
 		Args:     []string{"duckduckgo-mcp-server"},
 		Env:      map[string]string{"TEST_VAR": "test_value"},
@@ -76,7 +76,7 @@ func TestMCPServerConfigModel_ToServerConfig(t *testing.T) {
 }
 
 func TestMCPServerConfigModel_FromServerConfig(t *testing.T) {
-	serverConfig := mcphost.ServerConfig{
+	serverConfig := einomcphost.ServerConfig{
 		Command:  "uvx",
 		Args:     []string{"duckduckgo-mcp-server"},
 		Env:      map[string]string{"TEST_VAR": "test_value"},

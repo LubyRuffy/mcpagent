@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
+	"github.com/LubyRuffy/einomcphost"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/golang/mock/gomock"
@@ -16,8 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-
 
 // mockTool 是一个模拟的工具
 type mockTool struct {
@@ -54,8 +52,10 @@ max_step: 15
 mcp:
   config_file: test_mcpservers.json
   tools:
-    - tool1
-    - tool2
+    - server: inner
+      name: tool1
+    - server: inner
+      name: tool2
 proxy: http://test-proxy.com
 system_prompt: Test system prompt
 `
@@ -69,7 +69,13 @@ system_prompt: Test system prompt
 	// 验证配置内容
 	assert.Equal(t, "http://test-proxy.com", cfg.Proxy)
 	assert.Equal(t, "test_mcpservers.json", cfg.MCP.ConfigFile)
-	assert.Equal(t, []string{"tool1", "tool2"}, cfg.MCP.Tools)
+	assert.Equal(t, []MCPToolConfig{{
+		Server: "inner",
+		Name:   "tool1",
+	}, {
+		Server: "inner",
+		Name:   "tool2",
+	}}, cfg.MCP.Tools)
 	assert.Equal(t, "openai", cfg.LLM.Type)
 	assert.Equal(t, "http://test-url.com", cfg.LLM.BaseURL)
 	assert.Equal(t, "test-model", cfg.LLM.Model)
@@ -90,8 +96,10 @@ max_step: 15
 mcp:
   config_file: ""
   tools:
-    - tool1
-    - tool2
+    - server: server1
+      name: tool1
+    - server: server2
+      name: tool2
   mcp_servers:
     server1:
       transport_type: stdio
@@ -114,7 +122,13 @@ system_prompt: Test system prompt
 	// 验证配置内容
 	assert.Equal(t, "http://test-proxy.com", cfgWithServers.Proxy)
 	assert.Equal(t, "", cfgWithServers.MCP.ConfigFile) // ConfigFile应该为空
-	assert.Equal(t, []string{"tool1", "tool2"}, cfgWithServers.MCP.Tools)
+	assert.Equal(t, []MCPToolConfig{{
+		Server: "server1",
+		Name:   "tool1",
+	}, {
+		Server: "server2",
+		Name:   "tool2",
+	}}, cfgWithServers.MCP.Tools)
 
 	// 验证MCPServers
 	assert.Len(t, cfgWithServers.MCP.MCPServers, 2)
@@ -219,7 +233,7 @@ func TestLoadConfigDefault(t *testing.T) {
 	assert.Equal(t, "", cfg.MCP.ConfigFile)
 	assert.NotNil(t, cfg.MCP.MCPServers)
 	assert.Equal(t, 0, len(cfg.MCP.MCPServers))
-	assert.Equal(t, []string{}, cfg.MCP.Tools)
+	assert.Equal(t, []MCPToolConfig{}, cfg.MCP.Tools)
 	assert.Equal(t, "ollama", cfg.LLM.Type)
 	assert.Equal(t, "http://127.0.0.1:11434", cfg.LLM.BaseURL)
 	assert.Equal(t, "qwen3:4b", cfg.LLM.Model)
@@ -238,7 +252,16 @@ func TestSaveConfig(t *testing.T) {
 		Proxy: "http://save-test-proxy.com",
 		MCP: MCPConfig{
 			ConfigFile: "save_test_mcpservers.json",
-			Tools:      []string{"save_tool1", "save_tool2"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "save_tool1",
+				},
+				{
+					Server: "server2",
+					Name:   "save_tool2",
+				},
+			},
 		},
 		LLM: LLMConfig{
 			Type:    "openai",
@@ -273,7 +296,7 @@ func TestSaveConfig(t *testing.T) {
 		Proxy: "http://save-test-proxy.com",
 		MCP: MCPConfig{
 			ConfigFile: "", // 空的ConfigFile
-			MCPServers: map[string]mcphost.ServerConfig{
+			MCPServers: map[string]*einomcphost.ServerConfig{
 				"server1": {
 					TransportType: "stdio",
 					Command:       "echo",
@@ -284,7 +307,16 @@ func TestSaveConfig(t *testing.T) {
 					URL:           "http://localhost:8080",
 				},
 			},
-			Tools: []string{"save_tool1", "save_tool2"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "save_tool1",
+				},
+				{
+					Server: "server2",
+					Name:   "save_tool2",
+				},
+			},
 		},
 		LLM: LLMConfig{
 			Type:    "openai",
@@ -506,7 +538,7 @@ func TestGetTools(t *testing.T) {
 		&mockTool{name: "tool1"},
 		&mockTool{name: "tool2"},
 	}
-	mockMCPHub.EXPECT().GetEinoTools(gomock.Any(), gomock.Eq([]string{"tool1", "tool2"})).Return(mockTools, nil)
+	mockMCPHub.EXPECT().GetEinoTools(gomock.Any(), gomock.Eq([]string{"server1_tool1", "server2_tool2"})).Return(mockTools, nil)
 	mockMCPHub.EXPECT().CloseServers().Return(nil)
 
 	// 替换 mcpHubFactory 函数
@@ -517,7 +549,16 @@ func TestGetTools(t *testing.T) {
 	cfg := &Config{
 		MCP: MCPConfig{
 			ConfigFile: "test_mcpservers.json",
-			Tools:      []string{"tool1", "tool2"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "tool1",
+				},
+				{
+					Server: "server2",
+					Name:   "tool2",
+				},
+			},
 		},
 	}
 
@@ -525,7 +566,7 @@ func TestGetTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, tools)
 	assert.NotNil(t, cleanup)
-	assert.Len(t, tools, 2)
+	assert.Len(t, tools, 4) // 2个内置工具 + 2个MCP工具
 
 	// 执行清理函数
 	cleanup()
@@ -536,23 +577,32 @@ func TestGetTools(t *testing.T) {
 		&mockTool{name: "tool1"},
 		&mockTool{name: "tool2"},
 	}
-	mockMCPHub.EXPECT().GetEinoTools(gomock.Any(), gomock.Eq([]string{"tool1", "tool2"})).Return(mockTools, nil)
+	mockMCPHub.EXPECT().GetEinoTools(gomock.Any(), gomock.Eq([]string{"server1_tool1", "server2_tool2"})).Return(mockTools, nil)
 	mockMCPHub.EXPECT().CloseServers().Return(nil)
 
 	// 替换 mcpHubFromSettingsFactory 函数
-	mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPSettings) (MCPHubInterface, error) {
+	mcpHubFromSettingsFactory = func(ctx context.Context, settings *einomcphost.MCPSettings) (MCPHubInterface, error) {
 		return mockMCPHub, nil
 	}
 
 	cfgWithServers := &Config{
 		MCP: MCPConfig{
-			MCPServers: map[string]mcphost.ServerConfig{
+			MCPServers: map[string]*einomcphost.ServerConfig{
 				"server1": {
 					TransportType: "stdio",
 					Command:       "echo",
 				},
 			},
-			Tools: []string{"tool1", "tool2"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "tool1",
+				},
+				{
+					Server: "server2",
+					Name:   "tool2",
+				},
+			},
 		},
 	}
 
@@ -560,7 +610,7 @@ func TestGetTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, tools)
 	assert.NotNil(t, cleanup)
-	assert.Len(t, tools, 2)
+	assert.Len(t, tools, 4) // 2个内置工具 + 2个MCP工具
 
 	// 执行清理函数
 	cleanup()
@@ -573,36 +623,64 @@ func TestGetTools(t *testing.T) {
 	cfg = &Config{
 		MCP: MCPConfig{
 			ConfigFile: "test_mcpservers.json",
-			Tools:      []string{"tool1", "tool2"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "tool1",
+				},
+				{
+					Server: "server2",
+					Name:   "tool2",
+				},
+			},
 		},
 	}
 
 	tools, cleanup, err = cfg.GetTools(ctx)
-	assert.Error(t, err)
-	assert.Nil(t, tools)
-	assert.Nil(t, cleanup)
+	// GetTools方法在MCP连接失败时不会返回错误，而是继续使用内置工具
+	assert.NoError(t, err)
+	assert.NotNil(t, tools)
+	assert.NotNil(t, cleanup)
+	assert.Len(t, tools, 2) // 仅内置工具
+	if cleanup != nil {
+		cleanup()
+	}
 
 	// 测试 NewMCPHubFromSettings 失败的情况
-	mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPSettings) (MCPHubInterface, error) {
+	mcpHubFromSettingsFactory = func(ctx context.Context, settings *einomcphost.MCPSettings) (MCPHubInterface, error) {
 		return nil, fmt.Errorf("模拟 NewMCPHubFromSettings 失败")
 	}
 
 	cfgWithServers = &Config{
 		MCP: MCPConfig{
-			MCPServers: map[string]mcphost.ServerConfig{
+			MCPServers: map[string]*einomcphost.ServerConfig{
 				"server1": {
 					TransportType: "stdio",
 					Command:       "echo",
 				},
 			},
-			Tools: []string{"tool1", "tool2"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "tool1",
+				},
+				{
+					Server: "server2",
+					Name:   "tool2",
+				},
+			},
 		},
 	}
 
 	tools, cleanup, err = cfgWithServers.GetTools(ctx)
-	assert.Error(t, err)
-	assert.Nil(t, tools)
-	assert.Nil(t, cleanup)
+	// GetTools方法在MCP连接失败时不会返回错误，而是继续使用内置工具
+	assert.NoError(t, err)
+	assert.NotNil(t, tools)
+	assert.NotNil(t, cleanup)
+	assert.Len(t, tools, 2) // 仅内置工具
+	if cleanup != nil {
+		cleanup()
+	}
 
 	// 测试 GetEinoTools 失败的情况
 	mockMCPHub = NewMockMCPHubInterface(ctrl)
@@ -616,14 +694,28 @@ func TestGetTools(t *testing.T) {
 	cfg = &Config{
 		MCP: MCPConfig{
 			ConfigFile: "test_mcpservers.json",
-			Tools:      []string{"tool1", "tool2"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "tool1",
+				},
+				{
+					Server: "server2",
+					Name:   "tool2",
+				},
+			},
 		},
 	}
 
 	tools, cleanup, err = cfg.GetTools(ctx)
-	assert.Error(t, err)
-	assert.Nil(t, tools)
-	assert.Nil(t, cleanup) // 当 GetEinoTools 失败时，清理函数会被调用后返回 nil
+	// GetTools方法在获取MCP工具失败时不会返回错误，而是继续使用内置工具
+	assert.NoError(t, err)
+	assert.NotNil(t, tools)
+	assert.NotNil(t, cleanup)
+	assert.Len(t, tools, 2) // 仅内置工具
+	if cleanup != nil {
+		cleanup()
+	}
 }
 
 // TestMCPConfigValidate 测试 MCPConfig 的验证方法
@@ -631,7 +723,16 @@ func TestMCPConfigValidate(t *testing.T) {
 	// 测试有效配置 - 使用ConfigFile
 	validMCP := MCPConfig{
 		ConfigFile: "valid_config.json",
-		Tools:      []string{"tool1", "tool2"},
+		Tools: []MCPToolConfig{
+			{
+				Server: "server1",
+				Name:   "tool1",
+			},
+			{
+				Server: "server2",
+				Name:   "tool2",
+			},
+		},
 	}
 	err := validMCP.Validate()
 	assert.NoError(t, err)
@@ -639,13 +740,18 @@ func TestMCPConfigValidate(t *testing.T) {
 	// 测试有效配置 - 使用MCPServers
 	validMCPWithServers := MCPConfig{
 		ConfigFile: "", // 空的ConfigFile
-		MCPServers: map[string]mcphost.ServerConfig{
+		MCPServers: map[string]*einomcphost.ServerConfig{
 			"server1": {
 				TransportType: "stdio",
 				Command:       "echo",
 			},
 		},
-		Tools: []string{"tool1", "tool2"},
+		Tools: []MCPToolConfig{
+			{
+				Server: "server1",
+				Name:   "tool1",
+			},
+		},
 	}
 	err = validMCPWithServers.Validate()
 	assert.NoError(t, err)
@@ -654,7 +760,12 @@ func TestMCPConfigValidate(t *testing.T) {
 	invalidMCP := MCPConfig{
 		ConfigFile: "",
 		MCPServers: nil, // nil MCPServers
-		Tools:      []string{"tool1"},
+		Tools: []MCPToolConfig{
+			{
+				Server: "server1",
+				Name:   "tool1",
+			},
+		},
 	}
 	err = invalidMCP.Validate()
 	assert.Error(t, err)
@@ -663,8 +774,13 @@ func TestMCPConfigValidate(t *testing.T) {
 	// 测试有效配置 - 空的MCPServers map（但不是nil）
 	validEmptyMCP := MCPConfig{
 		ConfigFile: "",
-		MCPServers: map[string]mcphost.ServerConfig{}, // 空但不是nil
-		Tools:      []string{"tool1"},
+		MCPServers: map[string]*einomcphost.ServerConfig{}, // 空但不是nil
+		Tools: []MCPToolConfig{
+			{
+				Server: "server1",
+				Name:   "tool1",
+			},
+		},
 	}
 	err = validEmptyMCP.Validate()
 	assert.NoError(t, err)
@@ -739,7 +855,12 @@ func TestConfigValidate(t *testing.T) {
 	validConfig := Config{
 		MCP: MCPConfig{
 			ConfigFile: "valid_config.json",
-			Tools:      []string{"tool1"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "tool1",
+				},
+			},
 		},
 		LLM: LLMConfig{
 			Type:    LLMProviderOpenAI,
@@ -756,13 +877,18 @@ func TestConfigValidate(t *testing.T) {
 	validConfigWithServers := Config{
 		MCP: MCPConfig{
 			ConfigFile: "", // 空的ConfigFile
-			MCPServers: map[string]mcphost.ServerConfig{
+			MCPServers: map[string]*einomcphost.ServerConfig{
 				"server1": {
 					TransportType: "stdio",
 					Command:       "echo",
 				},
 			},
-			Tools: []string{"tool1"},
+			Tools: []MCPToolConfig{
+				{
+					Server: "server1",
+					Name:   "tool1",
+				},
+			},
 		},
 		LLM: LLMConfig{
 			Type:    LLMProviderOpenAI,
@@ -905,14 +1031,15 @@ func TestGetDefaultConfig(t *testing.T) {
 	config := NewDefaultConfig()
 
 	assert.Equal(t, "", config.Proxy)
+	assert.Equal(t, "", config.MCP.ConfigFile)
 	assert.NotNil(t, config.MCP.MCPServers)
 	assert.Equal(t, 0, len(config.MCP.MCPServers))
-	assert.Equal(t, []string{}, config.MCP.Tools)
+	assert.Equal(t, []MCPToolConfig{}, config.MCP.Tools)
 	assert.Equal(t, "ollama", config.LLM.Type)
 	assert.Equal(t, "http://127.0.0.1:11434", config.LLM.BaseURL)
 	assert.Equal(t, "qwen3:4b", config.LLM.Model)
 	assert.Equal(t, "ollama", config.LLM.APIKey)
-	assert.Equal(t, `你是精通互联网的信息收集专家，需要帮助用户进行信息收集，当前时间是：{date}。`, config.SystemPrompt)
+	assert.Equal(t, "你是精通互联网的信息收集专家，你可以多次调用提供的工具进行信息收集。当前时间是：{date}。", config.SystemPrompt)
 	assert.Equal(t, 20, config.MaxStep)
 }
 
@@ -979,7 +1106,7 @@ func TestNewDefaultConfig(t *testing.T) {
 	assert.Equal(t, "", cfg.MCP.ConfigFile)
 	assert.NotNil(t, cfg.MCP.MCPServers)
 	assert.Equal(t, 0, len(cfg.MCP.MCPServers))
-	assert.Equal(t, []string{}, cfg.MCP.Tools)
+	assert.Equal(t, []MCPToolConfig{}, cfg.MCP.Tools)
 	assert.Equal(t, LLMProviderOllama, cfg.LLM.Type)
 	assert.Equal(t, defaultOllamaBaseURL, cfg.LLM.BaseURL)
 	assert.Equal(t, defaultOllamaModel, cfg.LLM.Model)
@@ -1021,7 +1148,7 @@ func TestMCPConfigValidateWithWhitespace(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &MCPConfig{
 				ConfigFile: tt.configFile,
-				Tools:      []string{},
+				Tools:      []MCPToolConfig{},
 			}
 
 			err := config.Validate()
@@ -1176,8 +1303,8 @@ func TestConfigValidateMaxStep(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &Config{
 				MCP: MCPConfig{
-					MCPServers: make(map[string]mcphost.ServerConfig),
-					Tools:      []string{},
+					MCPServers: make(map[string]*einomcphost.ServerConfig),
+					Tools:      []MCPToolConfig{},
 				},
 				LLM: LLMConfig{
 					Type:    LLMProviderOllama,

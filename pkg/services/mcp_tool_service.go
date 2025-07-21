@@ -8,8 +8,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/LubyRuffy/einomcphost"
 	"github.com/LubyRuffy/mcpagent/pkg/database"
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
 	"github.com/LubyRuffy/mcpagent/pkg/models"
 	"gorm.io/gorm"
 )
@@ -159,14 +159,14 @@ func (s *MCPToolService) SyncToolsForServer(ctx context.Context, serverConfig *m
 	}
 
 	// 创建MCPSettings
-	settings := &mcphost.MCPSettings{
-		MCPServers: map[string]mcphost.ServerConfig{
-			serverConfig.Name: mcpServerConfig,
+	settings := &einomcphost.MCPSettings{
+		MCPServers: map[string]*einomcphost.ServerConfig{
+			serverConfig.Name: &mcpServerConfig,
 		},
 	}
 
 	// 使用连接池获取MCP服务器连接
-	pool := mcphost.GetConnectionPool()
+	pool := einomcphost.GetConnectionPool()
 
 	// 获取或创建连接
 	hub, err := pool.GetHub(ctx, settings)

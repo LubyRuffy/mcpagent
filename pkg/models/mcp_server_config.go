@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
+	"github.com/LubyRuffy/einomcphost"
 	"gorm.io/gorm"
 )
 
@@ -14,13 +14,13 @@ import (
 // It stores MCP server settings with metadata for management.
 type MCPServerConfigModel struct {
 	ID          uint           `gorm:"primarykey" json:"id"`
-	Name        string         `gorm:"uniqueIndex;not null" json:"name"`        // 服务器名称，用于用户识别
-	Description string         `gorm:"type:text" json:"description"`            // 服务器描述
-	Command     string         `gorm:"not null" json:"command"`                 // 启动命令
-	Args        string         `gorm:"type:text" json:"args"`                   // 参数列表（JSON格式存储）
-	Env         string         `gorm:"type:text" json:"env"`                    // 环境变量（JSON格式存储）
-	Disabled    bool           `gorm:"default:false" json:"disabled"`           // 是否禁用
-	IsActive    bool           `gorm:"default:true" json:"is_active"`           // 是否启用
+	Name        string         `gorm:"uniqueIndex;not null" json:"name"` // 服务器名称，用于用户识别
+	Description string         `gorm:"type:text" json:"description"`     // 服务器描述
+	Command     string         `gorm:"not null" json:"command"`          // 启动命令
+	Args        string         `gorm:"type:text" json:"args"`            // 参数列表（JSON格式存储）
+	Env         string         `gorm:"type:text" json:"env"`             // 环境变量（JSON格式存储）
+	Disabled    bool           `gorm:"default:false" json:"disabled"`    // 是否禁用
+	IsActive    bool           `gorm:"default:true" json:"is_active"`    // 是否启用
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
@@ -43,8 +43,8 @@ func (m *MCPServerConfigModel) Validate() error {
 }
 
 // ToServerConfig converts the database model to mcphost.ServerConfig
-func (m *MCPServerConfigModel) ToServerConfig() (mcphost.ServerConfig, error) {
-	config := mcphost.ServerConfig{
+func (m *MCPServerConfigModel) ToServerConfig() (einomcphost.ServerConfig, error) {
+	config := einomcphost.ServerConfig{
 		Command:  m.Command,
 		Disabled: m.Disabled,
 	}
@@ -71,7 +71,7 @@ func (m *MCPServerConfigModel) ToServerConfig() (mcphost.ServerConfig, error) {
 }
 
 // FromServerConfig populates the model from mcphost.ServerConfig
-func (m *MCPServerConfigModel) FromServerConfig(name, description string, config mcphost.ServerConfig) error {
+func (m *MCPServerConfigModel) FromServerConfig(name, description string, config einomcphost.ServerConfig) error {
 	m.Name = name
 	m.Description = description
 	m.Command = config.Command
@@ -103,7 +103,7 @@ func (m *MCPServerConfigModel) GetArgsSlice() ([]string, error) {
 	if m.Args == "" {
 		return []string{}, nil
 	}
-	
+
 	var args []string
 	if err := json.Unmarshal([]byte(m.Args), &args); err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func (m *MCPServerConfigModel) GetEnvMap() (map[string]string, error) {
 	if m.Env == "" {
 		return map[string]string{}, nil
 	}
-	
+
 	var env map[string]string
 	if err := json.Unmarshal([]byte(m.Env), &env); err != nil {
 		return nil, err
@@ -130,7 +130,7 @@ func (m *MCPServerConfigModel) SetArgs(args []string) error {
 		m.Args = ""
 		return nil
 	}
-	
+
 	argsJSON, err := json.Marshal(args)
 	if err != nil {
 		return err
@@ -145,7 +145,7 @@ func (m *MCPServerConfigModel) SetEnv(env map[string]string) error {
 		m.Env = ""
 		return nil
 	}
-	
+
 	envJSON, err := json.Marshal(env)
 	if err != nil {
 		return err

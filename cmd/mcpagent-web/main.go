@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LubyRuffy/einomcphost"
 	"github.com/LubyRuffy/mcpagent/pkg/database"
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
 	"github.com/LubyRuffy/mcpagent/pkg/services"
 	"github.com/LubyRuffy/mcpagent/pkg/webserver"
 )
@@ -139,7 +139,7 @@ func runServer(ctx context.Context, addr string, dbPath string) error {
 	log.Println("正在清理资源...")
 
 	// 清理MCP连接池
-	pool := mcphost.GetConnectionPool()
+	pool := einomcphost.GetConnectionPool()
 	if errs := pool.Shutdown(); len(errs) > 0 {
 		for _, err := range errs {
 			log.Printf("关闭MCP连接池时出错: %v", err)

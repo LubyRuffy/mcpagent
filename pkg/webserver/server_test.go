@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LubyRuffy/einomcphost"
 	"github.com/LubyRuffy/mcpagent/pkg/config"
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -131,7 +131,10 @@ func TestTaskEndpointWithConfig(t *testing.T) {
 		},
 		MCP: config.MCPConfig{
 			ConfigFile: "mcpservers.json", // 提供配置文件路径
-			Tools:      []string{"test_tool"},
+			Tools: []config.MCPToolConfig{{
+				Server: "test_server",
+				Name:   "test_tool",
+			}},
 		},
 		SystemPrompt: "自定义系统提示词",
 		MaxStep:      10,
@@ -170,7 +173,10 @@ func TestTaskEndpointInvalidConfig(t *testing.T) {
 		},
 		MCP: config.MCPConfig{
 			// 既没有ConfigFile也没有MCPServers，应该验证失败
-			Tools: []string{"test_tool"},
+			Tools: []config.MCPToolConfig{{
+				Server: "test_server",
+				Name:   "test_tool",
+			}},
 		},
 		SystemPrompt: "自定义系统提示词",
 		MaxStep:      10,
@@ -425,7 +431,10 @@ func TestHandleUpdateConfig(t *testing.T) {
 		},
 		MCP: config.MCPConfig{
 			ConfigFile: "mcpservers.json",
-			Tools:      []string{"test_tool"},
+			Tools: []config.MCPToolConfig{{
+				Server: "test_server",
+				Name:   "test_tool",
+			}},
 		},
 		SystemPrompt: "新的系统提示词",
 		MaxStep:      30,
@@ -505,7 +514,7 @@ func TestHandleGetMCPTools(t *testing.T) {
 		{
 			name: "空的MCP服务器配置",
 			requestBody: MCPToolsRequest{
-				MCPServers: map[string]mcphost.ServerConfig{},
+				MCPServers: map[string]*einomcphost.ServerConfig{},
 			},
 			expectedStatus: http.StatusOK,
 			expectSuccess:  true,
@@ -513,7 +522,7 @@ func TestHandleGetMCPTools(t *testing.T) {
 		{
 			name: "无效的MCP服务器配置",
 			requestBody: MCPToolsRequest{
-				MCPServers: map[string]mcphost.ServerConfig{
+				MCPServers: map[string]*einomcphost.ServerConfig{
 					"invalid_server": {
 						Command: "invalid_command_that_does_not_exist",
 						Args:    []string{"--invalid"},

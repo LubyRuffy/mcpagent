@@ -39,7 +39,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
+	"github.com/LubyRuffy/einomcphost"
 	"github.com/LubyRuffy/mcpagent/pkg/models"
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 	"github.com/cloudwego/eino-ext/components/model/openai"
@@ -97,23 +97,23 @@ type MCPHubInterface interface {
 // This variable allows for dependency injection during testing by replacing
 // the factory function with a mock implementation.
 var mcpHubFactory = func(ctx context.Context, configFile string) (MCPHubInterface, error) {
-	return mcphost.NewMCPHub(ctx, configFile)
+	return einomcphost.NewMCPHub(ctx, configFile)
 }
 
 // mcpHubFromSettingsFactory is a factory function for creating MCPHub instances from settings.
 // This variable allows for dependency injection during testing by replacing
 // the factory function with a mock implementation.
-var mcpHubFromSettingsFactory = func(ctx context.Context, settings *mcphost.MCPSettings) (MCPHubInterface, error) {
-	return mcphost.NewMCPHubFromSettings(ctx, settings)
+var mcpHubFromSettingsFactory = func(ctx context.Context, settings *einomcphost.MCPSettings) (MCPHubInterface, error) {
+	return einomcphost.NewMCPHubFromSettings(ctx, settings)
 }
 
 // MCPConfig represents MCP (Model Context Protocol) server configuration settings.
 // It contains either the path to MCP server configuration file or direct MCPServers configuration,
 // along with the list of tools to use.
 type MCPConfig struct {
-	ConfigFile string                          `mapstructure:"config_file" json:"config_file" yaml:"config_file"` // MCP服务器配置文件路径
-	MCPServers map[string]mcphost.ServerConfig `mapstructure:"mcp_servers" json:"mcp_servers" yaml:"mcp_servers"` // MCP服务器直接配置
-	Tools      []MCPToolConfig                 `mapstructure:"tools" json:"tools" yaml:"tools"`                   // 工具配置列表
+	ConfigFile string                               `mapstructure:"config_file" json:"config_file" yaml:"config_file"` // MCP服务器配置文件路径
+	MCPServers map[string]*einomcphost.ServerConfig `mapstructure:"mcp_servers" json:"mcp_servers" yaml:"mcp_servers"` // MCP服务器直接配置
+	Tools      []MCPToolConfig                      `mapstructure:"tools" json:"tools" yaml:"tools"`                   // 工具配置列表
 }
 
 // MCPToolConfig 表示一个MCP工具的配置，包括服务器名称和工具名称
@@ -347,7 +347,7 @@ func (c *Config) GetTools(ctx context.Context) ([]tool.BaseTool, func(), error) 
 		// 如果MCPServers不为nil，则优先使用MCPServers配置（即使为空）
 		if c.MCP.MCPServers != nil {
 			// 创建MCPSettings
-			settings := &mcphost.MCPSettings{
+			settings := &einomcphost.MCPSettings{
 				MCPServers: c.MCP.MCPServers,
 			}
 
@@ -476,7 +476,7 @@ func (c *Config) setViperValues() {
 func NewDefaultConfig() *Config {
 	return &Config{
 		MCP: MCPConfig{
-			MCPServers: make(map[string]mcphost.ServerConfig),
+			MCPServers: make(map[string]*einomcphost.ServerConfig),
 			Tools:      []MCPToolConfig{},
 		},
 		LLM: LLMConfig{

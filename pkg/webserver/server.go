@@ -27,9 +27,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/LubyRuffy/einomcphost"
 	"github.com/LubyRuffy/mcpagent/pkg/config"
 	"github.com/LubyRuffy/mcpagent/pkg/mcpagent"
-	"github.com/LubyRuffy/mcpagent/pkg/mcphost"
 	"github.com/LubyRuffy/mcpagent/pkg/models"
 	"github.com/LubyRuffy/mcpagent/pkg/services"
 	"github.com/gorilla/mux"
@@ -51,7 +51,7 @@ type TaskRequest struct {
 
 // MCPToolsRequest represents a request to get tools from MCP servers
 type MCPToolsRequest struct {
-	MCPServers map[string]mcphost.ServerConfig `json:"mcp_servers"`
+	MCPServers map[string]*einomcphost.ServerConfig `json:"mcp_servers"`
 }
 
 // MCPToolInfo represents information about an MCP tool
@@ -240,7 +240,7 @@ func (s *Server) cleanupOnShutdown() {
 	<-s.shutdown
 
 	// 关闭所有MCP连接
-	pool := mcphost.GetConnectionPool()
+	pool := einomcphost.GetConnectionPool()
 	if errs := pool.Shutdown(); len(errs) > 0 {
 		for _, err := range errs {
 			log.Printf("关闭MCP连接时出错: %v", err)
@@ -939,7 +939,7 @@ func (s *Server) handleGetMCPTools(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 创建MCPSettings
-	settings := &mcphost.MCPSettings{
+	settings := &einomcphost.MCPSettings{
 		MCPServers: req.MCPServers,
 	}
 
@@ -948,7 +948,7 @@ func (s *Server) handleGetMCPTools(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	// 获取连接池
-	pool := mcphost.GetConnectionPool()
+	pool := einomcphost.GetConnectionPool()
 
 	// 获取或创建连接
 	hub, err := pool.GetHub(ctx, settings)
@@ -1053,18 +1053,18 @@ func (s *Server) handleGetMCPToolsFromDB(w http.ResponseWriter, r *http.Request)
 		}
 
 		// 将数据库配置转换为mcphost.ServerConfig格式
-		mcpServers := make(map[string]mcphost.ServerConfig)
+		mcpServers := make(map[string]*einomcphost.ServerConfig)
 		for name, config := range configs {
 			serverConfig, err := config.ToServerConfig()
 			if err != nil {
 				log.Printf("转换服务器配置失败 %s: %v", name, err)
 				continue
 			}
-			mcpServers[name] = serverConfig
+			mcpServers[name] = &serverConfig
 		}
 
 		// 创建MCPSettings
-		settings := &mcphost.MCPSettings{
+		settings := &einomcphost.MCPSettings{
 			MCPServers: mcpServers,
 		}
 
@@ -1073,7 +1073,7 @@ func (s *Server) handleGetMCPToolsFromDB(w http.ResponseWriter, r *http.Request)
 		defer cancel()
 
 		// 获取连接池
-		pool := mcphost.GetConnectionPool()
+		pool := einomcphost.GetConnectionPool()
 
 		// 获取或创建连接
 		hub, err := pool.GetHub(ctx, settings)
