@@ -76,9 +76,13 @@ export interface CreateMCPServerConfigForm {
 }
 
 export interface MCPServer {
-  command: string
-  args: string[]
+  transportType?: string // 传输类型：stdio, sse, http (使用正确的字段名)
+  command?: string
+  args?: string[]
   env?: Record<string, string>
+  url?: string // SSE/HTTP类型需要的URL
+  headers?: string[] // HTTP类型可能需要的头部
+  disabled?: boolean
   status?: 'connected' | 'disconnected' | 'connecting' | 'error'
 }
 

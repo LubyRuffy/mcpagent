@@ -295,35 +295,73 @@ export const useConfigStore = defineStore('config', () => {
       mcpServerConfigs.value.forEach(serverConfig => {
         if (!serverConfig.disabled) {
           try {
-            // 解析JSON格式的参数和环境变量
-            let args: any = [];
-            let env: any = {};
-            
-            try {
-              args = typeof serverConfig.args === 'string' 
-                ? (serverConfig.args.trim() ? JSON.parse(serverConfig.args) : []) 
-                : serverConfig.args || [];
-            } catch (e) {
-              console.error(`【配置】解析服务器${serverConfig.name}的args失败:`, e, '原始值:', serverConfig.args);
-              args = [];
-            }
-            
-            try {
-              env = typeof serverConfig.env === 'string' 
-                ? (serverConfig.env.trim() ? JSON.parse(serverConfig.env) : {}) 
-                : serverConfig.env || {};
-            } catch (e) {
-              console.error(`【配置】解析服务器${serverConfig.name}的env失败:`, e, '原始值:', serverConfig.env);
-              env = {};
-            }
-            
-            // 创建服务器配置，确保数据类型正确
-            newMcpServers[serverConfig.name] = {
-              command: serverConfig.command || "",
-              args: Array.isArray(args) ? args : [],
-              env: typeof env === 'object' && env !== null ? env : {},
+            // 根据传输类型创建不同的服务器配置
+            const serverConfigData: any = {
               status: 'disconnected'
             };
+            
+            // 根据传输类型设置配置
+            switch (serverConfig.transport_type) {
+              case 'stdio':
+                // stdio类型需要command, args, env
+                serverConfigData.transportType = 'stdio';
+                serverConfigData.command = serverConfig.command || "";
+                
+                // 解析args
+                try {
+                  const args = typeof serverConfig.args === 'string' 
+                    ? (serverConfig.args.trim() ? JSON.parse(serverConfig.args) : []) 
+                    : serverConfig.args || [];
+                  serverConfigData.args = Array.isArray(args) ? args : [];
+                } catch (e) {
+                  console.error(`【配置】解析服务器${serverConfig.name}的args失败:`, e, '原始值:', serverConfig.args);
+                  serverConfigData.args = [];
+                }
+                
+                // 解析env
+                try {
+                  const env = typeof serverConfig.env === 'string' 
+                    ? (serverConfig.env.trim() ? JSON.parse(serverConfig.env) : {}) 
+                    : serverConfig.env || {};
+                  serverConfigData.env = typeof env === 'object' && env !== null ? env : {};
+                } catch (e) {
+                  console.error(`【配置】解析服务器${serverConfig.name}的env失败:`, e, '原始值:', serverConfig.env);
+                  serverConfigData.env = {};
+                }
+                break;
+                
+              case 'sse':
+              case 'http':
+                // sse/http类型需要url
+                serverConfigData.transportType = serverConfig.transport_type;
+                serverConfigData.url = serverConfig.url || "";
+                
+                // 解析headers（如果有的话）
+                try {
+                  const headers = typeof serverConfig.headers === 'string' 
+                    ? (serverConfig.headers.trim() ? JSON.parse(serverConfig.headers) : []) 
+                    : serverConfig.headers || [];
+                  if (Array.isArray(headers) && headers.length > 0) {
+                    serverConfigData.headers = headers;
+                  }
+                } catch (e) {
+                  console.error(`【配置】解析服务器${serverConfig.name}的headers失败:`, e, '原始值:', serverConfig.headers);
+                }
+                break;
+                
+              default:
+                console.warn(`【配置】未知的传输类型: ${serverConfig.transport_type}，使用stdio默认配置`);
+                serverConfigData.transportType = 'stdio';
+                serverConfigData.command = serverConfig.command || "";
+                serverConfigData.args = [];
+                serverConfigData.env = {};
+            }
+            
+            // 添加disabled字段
+            serverConfigData.disabled = serverConfig.disabled || false;
+            
+            newMcpServers[serverConfig.name] = serverConfigData;
+            
           } catch (e) {
             console.error(`创建服务器配置失败: ${serverConfig.name}`, e);
           }
@@ -336,7 +374,8 @@ export const useConfigStore = defineStore('config', () => {
           command: 'ddg',
           args: [],
           env: {},
-          status: 'disconnected'
+          status: 'disconnected',
+          transportType: 'stdio'
         };
       }
       
@@ -349,7 +388,8 @@ export const useConfigStore = defineStore('config', () => {
           command: 'ddg',
           args: [],
           env: {},
-          status: 'disconnected'
+          status: 'disconnected',
+          transportType: 'stdio'
         }
       };
     }
@@ -629,6 +669,7 @@ export const useConfigStore = defineStore('config', () => {
         // 应急措施：创建一个默认的DDG服务器
         config.value.mcp.mcp_servers = {
           'ddg': {
+            transportType: 'stdio',
             command: 'ddg',
             args: [],
             env: {},
@@ -656,37 +697,70 @@ export const useConfigStore = defineStore('config', () => {
         }
           
         try {
-          // 解析JSON格式的参数和环境变量
-          let args: any = [];
-          let env: any = {};
-          
-          try {
-            args = typeof serverConfig.args === 'string' 
-              ? (serverConfig.args.trim() ? JSON.parse(serverConfig.args) : []) 
-              : serverConfig.args || [];
-          } catch (e) {
-            console.error(`【配置】解析服务器${serverConfig.name}的args失败:`, e, '原始值:', serverConfig.args);
-            args = [];
-          }
-          
-          try {
-            env = typeof serverConfig.env === 'string' 
-              ? (serverConfig.env.trim() ? JSON.parse(serverConfig.env) : {}) 
-              : serverConfig.env || {};
-          } catch (e) {
-            console.error(`【配置】解析服务器${serverConfig.name}的env失败:`, e, '原始值:', serverConfig.env);
-            env = {};
-          }
-            
-          // 创建服务器配置
-          newMcpServers[serverConfig.name] = {
-            command: serverConfig.command || '',
-            args: Array.isArray(args) ? args : [],
-            env: typeof env === 'object' && env !== null ? env : {},
-            status: 'disconnected' // 初始状态为断开连接
+          // 根据传输类型创建不同的服务器配置
+          const serverConfigData: MCPServer = {
+            status: 'disconnected',
+            disabled: serverConfig.disabled || false
           };
           
-          console.log(`【配置】添加服务器 ${serverConfig.name}:`, JSON.stringify(newMcpServers[serverConfig.name]));
+          // 根据传输类型设置配置
+          switch (serverConfig.transport_type) {
+            case 'stdio':
+              serverConfigData.transportType = 'stdio';
+              serverConfigData.command = serverConfig.command || "";
+              
+              // 解析args
+              try {
+                const args = typeof serverConfig.args === 'string' 
+                  ? (serverConfig.args.trim() ? JSON.parse(serverConfig.args) : []) 
+                  : serverConfig.args || [];
+                serverConfigData.args = Array.isArray(args) ? args : [];
+              } catch (e) {
+                console.error(`【配置】解析服务器${serverConfig.name}的args失败:`, e, '原始值:', serverConfig.args);
+                serverConfigData.args = [];
+              }
+              
+              // 解析env
+              try {
+                const env = typeof serverConfig.env === 'string' 
+                  ? (serverConfig.env.trim() ? JSON.parse(serverConfig.env) : {}) 
+                  : serverConfig.env || {};
+                serverConfigData.env = typeof env === 'object' && env !== null ? env : {};
+              } catch (e) {
+                console.error(`【配置】解析服务器${serverConfig.name}的env失败:`, e, '原始值:', serverConfig.env);
+                serverConfigData.env = {};
+              }
+              break;
+              
+            case 'sse':
+            case 'http':
+              serverConfigData.transportType = serverConfig.transport_type;
+              serverConfigData.url = serverConfig.url || "";
+              
+              // 解析headers（如果有的话）
+              try {
+                const headers = typeof serverConfig.headers === 'string' 
+                  ? (serverConfig.headers.trim() ? JSON.parse(serverConfig.headers) : []) 
+                  : serverConfig.headers || [];
+                if (Array.isArray(headers) && headers.length > 0) {
+                  serverConfigData.headers = headers;
+                }
+              } catch (e) {
+                console.error(`【配置】解析服务器${serverConfig.name}的headers失败:`, e, '原始值:', serverConfig.headers);
+              }
+              break;
+              
+            default:
+              console.warn(`【配置】未知的传输类型: ${serverConfig.transport_type}，使用stdio默认配置`);
+              serverConfigData.transportType = 'stdio';
+              serverConfigData.command = serverConfig.command || "";
+              serverConfigData.args = [];
+              serverConfigData.env = {};
+          }
+          
+          newMcpServers[serverConfig.name] = serverConfigData;
+          
+          console.log(`【配置】添加服务器 ${serverConfig.name}:`, JSON.stringify(serverConfigData));
         } catch (e) {
           console.error(`【配置】解析服务器配置失败: ${serverConfig.name}`, e);
         }
@@ -696,6 +770,7 @@ export const useConfigStore = defineStore('config', () => {
       if (Object.keys(newMcpServers).length === 0) {
         console.warn('【配置】无可用服务器，添加默认DDG服务器');
         newMcpServers['ddg'] = {
+          transportType: 'stdio',
           command: 'ddg',
           args: [],
           env: {},
@@ -718,6 +793,7 @@ export const useConfigStore = defineStore('config', () => {
       // 应急处理：创建默认服务器
       config.value.mcp.mcp_servers = {
         'ddg': {
+          transportType: 'stdio',
           command: 'ddg',
           args: [],
           env: {},
