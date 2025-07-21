@@ -15,28 +15,75 @@ func TestMCPServerConfigModel_Validate(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name: "valid config",
+			name: "valid stdio config",
 			config: MCPServerConfigModel{
-				Name:    "test-server",
-				Command: "uvx",
+				Name:          "test-server",
+				TransportType: "stdio",
+				Command:       "uvx",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid sse config",
+			config: MCPServerConfigModel{
+				Name:          "sse-server",
+				TransportType: "sse",
+				URL:           "http://localhost:8000/sse",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid http config",
+			config: MCPServerConfigModel{
+				Name:          "http-server",
+				TransportType: "http",
+				URL:           "http://localhost:8000/api",
 			},
 			wantErr: false,
 		},
 		{
 			name: "empty name",
 			config: MCPServerConfigModel{
-				Command: "uvx",
+				TransportType: "stdio",
+				Command:       "uvx",
 			},
 			wantErr: true,
 			errMsg:  "MCP服务器配置名称不能为空",
 		},
 		{
-			name: "empty command",
+			name: "stdio without command",
 			config: MCPServerConfigModel{
-				Name: "test-server",
+				Name:          "test-server",
+				TransportType: "stdio",
 			},
 			wantErr: true,
 			errMsg:  "MCP服务器启动命令不能为空",
+		},
+		{
+			name: "sse without url",
+			config: MCPServerConfigModel{
+				Name:          "sse-server",
+				TransportType: "sse",
+			},
+			wantErr: true,
+			errMsg:  "MCP服务器URL不能为空",
+		},
+		{
+			name: "invalid transport type",
+			config: MCPServerConfigModel{
+				Name:          "test-server",
+				TransportType: "invalid",
+			},
+			wantErr: true,
+			errMsg:  "MCP服务器传输类型无效，仅支持 stdio、sse 和 http",
+		},
+		{
+			name: "backward compatibility - empty transport type defaults to stdio",
+			config: MCPServerConfigModel{
+				Name:    "legacy-server",
+				Command: "uvx",
+			},
+			wantErr: false,
 		},
 	}
 
@@ -55,10 +102,55 @@ func TestMCPServerConfigModel_Validate(t *testing.T) {
 
 func TestMCPServerConfigModel_ToServerConfig(t *testing.T) {
 	config := MCPServerConfigModel{
-		Name:     "test-server",
+		Name:          "test-server",
+		TransportType: "stdio",
+		Command:       "uvx",
+		Args:          `["duckduckgo-mcp-server"]`,
+		Env:           `{"TEST_VAR":"test_value"}`,
+		Disabled:      false,
+	}
+
+	serverConfig, err := config.ToServerConfig()
+	assert.NoError(t, err)
+
+	expected := einomcphost.ServerConfig{
+		TransportType: "stdio",
+		Command:       "uvx",
+		Args:          []string{"duckduckgo-mcp-server"},
+		Env:           map[string]string{"TEST_VAR": "test_value"},
+		Disabled:      false,
+	}
+
+	assert.Equal(t, expected, serverConfig)
+}
+
+func TestMCPServerConfigModel_ToServerConfig_SSE(t *testing.T) {
+	config := MCPServerConfigModel{
+		Name:          "sse-server",
+		TransportType: "sse",
+		URL:           "http://localhost:8000/sse",
+		Headers:       `["Authorization: Bearer token"]`,
+		Disabled:      false,
+	}
+
+	serverConfig, err := config.ToServerConfig()
+	assert.NoError(t, err)
+
+	expected := einomcphost.ServerConfig{
+		TransportType: "sse",
+		URL:           "http://localhost:8000/sse",
+		Disabled:      false,
+	}
+
+	assert.Equal(t, expected, serverConfig)
+}
+
+func TestMCPServerConfigModel_ToServerConfig_DefaultTransportType(t *testing.T) {
+	// Test backward compatibility - empty transport type should default to stdio
+	config := MCPServerConfigModel{
+		Name:     "legacy-server",
 		Command:  "uvx",
-		Args:     `["duckduckgo-mcp-server"]`,
-		Env:      `{"TEST_VAR":"test_value"}`,
+		Args:     `["test-server"]`,
 		Disabled: false,
 	}
 
@@ -66,10 +158,10 @@ func TestMCPServerConfigModel_ToServerConfig(t *testing.T) {
 	assert.NoError(t, err)
 
 	expected := einomcphost.ServerConfig{
-		Command:  "uvx",
-		Args:     []string{"duckduckgo-mcp-server"},
-		Env:      map[string]string{"TEST_VAR": "test_value"},
-		Disabled: false,
+		TransportType: "stdio",
+		Command:       "uvx",
+		Args:          []string{"test-server"},
+		Disabled:      false,
 	}
 
 	assert.Equal(t, expected, serverConfig)
@@ -168,4 +260,34 @@ func TestMCPServerConfigModel_SetEnv(t *testing.T) {
 func TestMCPServerConfigModel_TableName(t *testing.T) {
 	config := MCPServerConfigModel{}
 	assert.Equal(t, "mcp_server_configs", config.TableName())
+}
+
+func TestMCPServerConfigModel_GetHeadersSlice(t *testing.T) {
+	config := MCPServerConfigModel{
+		Headers: `["Authorization: Bearer token", "Content-Type: application/json"]`,
+	}
+
+	headers, err := config.GetHeadersSlice()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"Authorization: Bearer token", "Content-Type: application/json"}, headers)
+
+	// Test empty headers
+	config.Headers = ""
+	headers, err = config.GetHeadersSlice()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{}, headers)
+}
+
+func TestMCPServerConfigModel_SetHeaders(t *testing.T) {
+	var config MCPServerConfigModel
+	headers := []string{"Authorization: Bearer token", "Content-Type: application/json"}
+
+	err := config.SetHeaders(headers)
+	assert.NoError(t, err)
+	assert.Equal(t, `["Authorization: Bearer token","Content-Type: application/json"]`, config.Headers)
+
+	// Test empty headers
+	err = config.SetHeaders([]string{})
+	assert.NoError(t, err)
+	assert.Equal(t, "", config.Headers)
 }

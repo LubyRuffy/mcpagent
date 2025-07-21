@@ -1144,12 +1144,18 @@ func (s *Server) handleListMCPServerConfigs(w http.ResponseWriter, r *http.Reque
 
 // CreateMCPServerConfigRequest represents the request body for creating MCP server config
 type CreateMCPServerConfigRequest struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Command     string            `json:"command"`
-	Args        []string          `json:"args"`
-	Env         map[string]string `json:"env"`
-	Disabled    bool              `json:"disabled"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	TransportType string `json:"transport_type"` // "stdio", "sse", or "http"
+	// STDIO specific fields
+	Command string            `json:"command"`
+	Args    []string          `json:"args"`
+	Env     map[string]string `json:"env"`
+	// SSE/HTTP specific fields
+	URL     string   `json:"url"`
+	Headers []string `json:"headers"`
+	// Common fields
+	Disabled bool `json:"disabled"`
 }
 
 // handleCreateMCPServerConfig handles POST /api/mcp/servers
@@ -1161,24 +1167,40 @@ func (s *Server) handleCreateMCPServerConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// 设置默认传输类型
+	transportType := req.TransportType
+	if transportType == "" {
+		transportType = "stdio" // 默认为stdio以保持向后兼容
+	}
+
 	// 创建数据库模型
 	config := &models.MCPServerConfigModel{
-		Name:        req.Name,
-		Description: req.Description,
-		Command:     req.Command,
-		Disabled:    req.Disabled,
-		IsActive:    true,
+		Name:          req.Name,
+		Description:   req.Description,
+		TransportType: transportType,
+		Command:       req.Command,
+		URL:           req.URL,
+		Disabled:      req.Disabled,
+		IsActive:      true,
 	}
 
-	// 设置参数和环境变量
-	if err := config.SetArgs(req.Args); err != nil {
-		http.Error(w, fmt.Sprintf("设置参数失败: %v", err), http.StatusBadRequest)
-		return
-	}
+	// 根据传输类型设置相应字段
+	switch transportType {
+	case "stdio":
+		if err := config.SetArgs(req.Args); err != nil {
+			http.Error(w, fmt.Sprintf("设置参数失败: %v", err), http.StatusBadRequest)
+			return
+		}
 
-	if err := config.SetEnv(req.Env); err != nil {
-		http.Error(w, fmt.Sprintf("设置环境变量失败: %v", err), http.StatusBadRequest)
-		return
+		if err := config.SetEnv(req.Env); err != nil {
+			http.Error(w, fmt.Sprintf("设置环境变量失败: %v", err), http.StatusBadRequest)
+			return
+		}
+	case "sse", "http":
+		if err := config.SetHeaders(req.Headers); err != nil {
+			http.Error(w, fmt.Sprintf("设置HTTP头部失败: %v", err), http.StatusBadRequest)
+			return
+		}
 	}
 
 	if err := s.mcpServerConfigService.CreateConfig(config); err != nil {
@@ -1251,24 +1273,40 @@ func (s *Server) handleUpdateMCPServerConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// 设置默认传输类型
+	transportType := req.TransportType
+	if transportType == "" {
+		transportType = "stdio" // 默认为stdio以保持向后兼容
+	}
+
 	// 创建更新模型
 	updates := &models.MCPServerConfigModel{
-		Name:        req.Name,
-		Description: req.Description,
-		Command:     req.Command,
-		Disabled:    req.Disabled,
-		IsActive:    true,
+		Name:          req.Name,
+		Description:   req.Description,
+		TransportType: transportType,
+		Command:       req.Command,
+		URL:           req.URL,
+		Disabled:      req.Disabled,
+		IsActive:      true,
 	}
 
-	// 设置参数和环境变量
-	if err := updates.SetArgs(req.Args); err != nil {
-		http.Error(w, fmt.Sprintf("设置参数失败: %v", err), http.StatusBadRequest)
-		return
-	}
+	// 根据传输类型设置相应字段
+	switch transportType {
+	case "stdio":
+		if err := updates.SetArgs(req.Args); err != nil {
+			http.Error(w, fmt.Sprintf("设置参数失败: %v", err), http.StatusBadRequest)
+			return
+		}
 
-	if err := updates.SetEnv(req.Env); err != nil {
-		http.Error(w, fmt.Sprintf("设置环境变量失败: %v", err), http.StatusBadRequest)
-		return
+		if err := updates.SetEnv(req.Env); err != nil {
+			http.Error(w, fmt.Sprintf("设置环境变量失败: %v", err), http.StatusBadRequest)
+			return
+		}
+	case "sse", "http":
+		if err := updates.SetHeaders(req.Headers); err != nil {
+			http.Error(w, fmt.Sprintf("设置HTTP头部失败: %v", err), http.StatusBadRequest)
+			return
+		}
 	}
 
 	if err := s.mcpServerConfigService.UpdateConfig(uint(id), updates); err != nil {
@@ -1281,6 +1319,18 @@ func (s *Server) handleUpdateMCPServerConfig(w http.ResponseWriter, r *http.Requ
 		}
 		return
 	}
+
+	// 异步同步工具，不阻塞响应
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := s.mcpToolService.SyncToolsForServer(ctx, updates); err != nil {
+			log.Printf("更新服务器后同步工具失败 %s: %v", updates.Name, err)
+		} else {
+			log.Printf("成功为更新后的服务器 %s 同步工具", updates.Name)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

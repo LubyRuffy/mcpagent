@@ -91,7 +91,7 @@
           ref="serverFormRef"
           :model="serverForm"
           :rules="serverFormRules"
-          label-width="80px"
+          label-width="180px"
       >
         <el-form-item :label="$t('config.mcp.serverName')" prop="name">
           <el-input
@@ -101,79 +101,146 @@
           />
         </el-form-item>
 
-        <el-form-item :label="$t('config.mcp.command')" prop="command">
-          <el-input
-              v-model="serverForm.command"
-              :placeholder="$t('config.mcp.commandPlaceholder')"
-          />
+        <el-form-item :label="$t('config.mcp.transportType')" prop="transport_type">
+          <el-select
+              v-model="serverForm.transport_type"
+              :teleported="false"
+              :placeholder="$t('config.mcp.transportTypePlaceholder')"
+              style="width: 100%"
+          >
+            <el-option
+                value="stdio"
+                :label="$t('config.mcp.transportStdio')"
+            />
+            <el-option
+                value="sse"
+                :label="$t('config.mcp.transportSSE')"
+            />
+            <el-option
+                value="http"
+                :label="$t('config.mcp.transportHTTP')"
+            />
+          </el-select>
         </el-form-item>
 
-        <el-form-item :label="$t('config.mcp.args')">
-          <el-tag
-              v-for="(arg, index) in serverForm.args"
-              :key="index"
-              closable
-              @close="removeArg(index)"
-              class="arg-tag"
-          >
-            {{ arg }}
-          </el-tag>
+        <!-- STDIO specific fields -->
+        <template v-if="serverForm.transport_type === 'stdio'">
+          <el-form-item :label="$t('config.mcp.command')" prop="command">
+            <el-input
+                v-model="serverForm.command"
+                :placeholder="$t('config.mcp.commandPlaceholder')"
+            />
+          </el-form-item>
 
-          <el-input
-              v-if="showArgInput"
-              ref="argInputRef"
-              v-model="newArg"
-              size="small"
-              @keyup.enter="addArg"
-              @blur="addArg"
-              class="arg-input"
-          />
-
-          <el-button
-              v-else
-              size="small"
-              @click="showNewArgInput"
-              class="add-arg-btn"
-          >
-            + {{ $t('config.mcp.addArg') }}
-          </el-button>
-        </el-form-item>
-
-        <el-form-item :label="$t('config.mcp.env')">
-          <div class="env-vars">
-            <div
-                v-for="(value, key) in serverForm.env"
-                :key="key"
-                class="env-var-item"
+          <el-form-item :label="$t('config.mcp.args')">
+            <el-tag
+                v-for="(arg, index) in serverForm.args"
+                :key="index"
+                closable
+                @close="removeArg(index)"
+                class="arg-tag"
             >
-              <el-input
-                  :model-value="key"
-                  :placeholder="$t('config.mcp.varName')"
-                  size="small"
-                  @input="updateEnvKey(key, $event)"
-              />
-              <el-input
-                  v-model="serverForm.env[key]"
-                  :placeholder="$t('config.mcp.varValue')"
-                  size="small"
-              />
-              <el-button
-                  size="small"
-                  type="danger"
-                  @click="removeEnvVar(key)"
-              >
-                {{ $t('common.delete') }}
-              </el-button>
-            </div>
+              {{ arg }}
+            </el-tag>
+
+            <el-input
+                v-if="showArgInput"
+                ref="argInputRef"
+                v-model="newArg"
+                size="small"
+                @keyup.enter="addArg"
+                @blur="addArg"
+                class="arg-input"
+            />
 
             <el-button
+                v-else
                 size="small"
-                @click="addEnvVar"
+                @click="showNewArgInput"
+                class="add-arg-btn"
             >
-              + {{ $t('config.mcp.addEnvVar') }}
+              + {{ $t('config.mcp.addArg') }}
             </el-button>
-          </div>
-        </el-form-item>
+          </el-form-item>
+
+          <el-form-item :label="$t('config.mcp.env')">
+            <div class="env-vars">
+              <div
+                  v-for="(value, key) in serverForm.env"
+                  :key="key"
+                  class="env-var-item"
+              >
+                <el-input
+                    :model-value="key"
+                    :placeholder="$t('config.mcp.varName')"
+                    size="small"
+                    @input="updateEnvKey(key, $event)"
+                />
+                <el-input
+                    v-model="serverForm.env[key]"
+                    :placeholder="$t('config.mcp.varValue')"
+                    size="small"
+                />
+                <el-button
+                    size="small"
+                    type="danger"
+                    @click="removeEnvVar(key)"
+                >
+                  {{ $t('common.delete') }}
+                </el-button>
+              </div>
+
+              <el-button
+                  size="small"
+                  @click="addEnvVar"
+              >
+                + {{ $t('config.mcp.addEnvVar') }}
+              </el-button>
+            </div>
+          </el-form-item>
+        </template>
+
+        <!-- SSE/HTTP specific fields -->
+        <template v-if="serverForm.transport_type === 'sse' || serverForm.transport_type === 'http'">
+          <el-form-item :label="$t('config.mcp.url')" prop="url">
+            <el-input
+                v-model="serverForm.url"
+                :placeholder="$t('config.mcp.urlPlaceholder')"
+            />
+          </el-form-item>
+
+          <el-form-item :label="$t('config.mcp.headers')">
+            <el-tag
+                v-for="(header, index) in serverForm.headers"
+                :key="index"
+                closable
+                @close="removeHeader(index)"
+                class="header-tag"
+            >
+              {{ header }}
+            </el-tag>
+
+            <el-input
+                v-if="showHeaderInput"
+                ref="headerInputRef"
+                v-model="newHeader"
+                size="small"
+                @keyup.enter="addHeader"
+                @blur="addHeader"
+                class="header-input"
+                :placeholder="$t('config.mcp.headerPlaceholder')"
+            />
+
+            <el-button
+                v-else
+                size="small"
+                @click="showNewHeaderInput"
+                class="add-header-btn"
+            >
+              + {{ $t('config.mcp.addHeader') }}
+            </el-button>
+          </el-form-item>
+        </template>
       </el-form>
 
       <template #footer>
@@ -313,6 +380,9 @@ const editingServer = ref<string | null>(null)
 const showArgInput = ref(false)
 const newArg = ref('')
 const argInputRef = ref()
+const showHeaderInput = ref(false)
+const newHeader = ref('')
+const headerInputRef = ref()
 const toolTreeRef = ref()
 // 工具详情展开状态
 const expandedTools = ref<Set<string>>(new Set())
@@ -320,20 +390,47 @@ const expandedTools = ref<Set<string>>(new Set())
 // 表单数据
 const serverForm = ref({
   name: '',
+  transport_type: 'stdio',
+  // STDIO fields
   command: '',
   args: [] as string[],
-  env: {} as Record<string, string>
+  env: {} as Record<string, string>,
+  // SSE/HTTP fields
+  url: '',
+  headers: [] as string[],
+  // Common fields
+  disabled: false
 })
 
-  // 表单验证规则
-const serverFormRules = {
-  name: [
-    { required: true, message: t('config.mcp.serverNameRequired'), trigger: 'blur' }
-  ],
-  command: [
-    { required: true, message: t('config.mcp.commandRequired'), trigger: 'blur' }
-  ]
-}
+  // 表单验证规则 - 使用computed实现条件验证
+const serverFormRules = computed(() => {
+  const rules: any = {
+    name: [
+      { required: true, message: t('config.mcp.serverNameRequired'), trigger: 'blur' }
+    ],
+    transport_type: [
+      { required: true, message: t('config.mcp.transportTypeRequired'), trigger: 'change' }
+    ]
+  }
+
+  // 根据传输类型添加条件验证
+  if (serverForm.value.transport_type === 'stdio') {
+    rules.command = [
+      { required: true, message: t('config.mcp.commandRequired'), trigger: 'blur' }
+    ]
+  } else if (serverForm.value.transport_type === 'sse' || serverForm.value.transport_type === 'http') {
+    rules.url = [
+      { required: true, message: t('config.mcp.urlRequired'), trigger: 'blur' },
+      { 
+        pattern: /^https?:\/\/.+/, 
+        message: t('config.mcp.urlInvalid'), 
+        trigger: 'blur' 
+      }
+    ]
+  }
+
+  return rules
+})
 
 // 树形组件配置
 const treeProps = {
@@ -647,9 +744,24 @@ const editServer = (name: string) => {
 
   serverForm.value = {
     name: serverConfig.name,
+    transport_type: serverConfig.transport_type || 'stdio',
     command: serverConfig.command,
     args: [...args],
-    env: { ...env }
+    env: { ...env },
+    url: serverConfig.url || '',
+    headers: [], // Will be parsed below if needed
+    disabled: serverConfig.disabled || false
+  }
+  
+  // Parse headers if it's an SSE/HTTP server
+  if (serverConfig.transport_type === 'sse' || serverConfig.transport_type === 'http') {
+    try {
+      const headers = serverConfig.headers ? JSON.parse(serverConfig.headers) : []
+      serverForm.value.headers = [...headers]
+    } catch (e) {
+      console.error('解析服务器头部失败:', e)
+      serverForm.value.headers = []
+    }
   }
   showAddServerDialog.value = true
 }
@@ -705,6 +817,25 @@ const removeArg = (index: number) => {
   serverForm.value.args.splice(index, 1)
 }
 
+const showNewHeaderInput = () => {
+  showHeaderInput.value = true
+  nextTick(() => {
+    headerInputRef.value?.focus()
+  })
+}
+
+const addHeader = () => {
+  if (newHeader.value.trim()) {
+    serverForm.value.headers.push(newHeader.value.trim())
+    newHeader.value = ''
+  }
+  showHeaderInput.value = false
+}
+
+const removeHeader = (index: number) => {
+  serverForm.value.headers.splice(index, 1)
+}
+
 const addEnvVar = () => {
   const key = 'VAR_' + (Object.keys(serverForm.value.env).length + 1)
   serverForm.value.env[key] = ''
@@ -727,10 +858,13 @@ const saveServer = async () => {
     const configData = {
       name: serverForm.value.name,
       description: '', // 可以添加描述字段
+      transport_type: serverForm.value.transport_type,
       command: serverForm.value.command,
       args: serverForm.value.args,
       env: serverForm.value.env,
-      disabled: false
+      url: serverForm.value.url,
+      headers: serverForm.value.headers,
+      disabled: serverForm.value.disabled
     }
 
     if (editingServer.value) {
@@ -761,12 +895,18 @@ const cancelServerEdit = () => {
   editingServer.value = null
   serverForm.value = {
     name: '',
+    transport_type: 'stdio',
     command: '',
     args: [],
-    env: {}
+    env: {},
+    url: '',
+    headers: [],
+    disabled: false
   }
   showArgInput.value = false
   newArg.value = ''
+  showHeaderInput.value = false
+  newHeader.value = ''
 }
 
 const handleToolsChange = (tools: string[]) => {
@@ -901,9 +1041,9 @@ const getDefaultCheckedKeys = () => {
           toolName = combinedName
           serverName = getActualToolServer(toolName)
         }
-      } else if (combinedName && typeof combinedName === 'object') {
-        toolName = combinedName.name
-        serverName = combinedName.server
+      } else if (combinedName && typeof combinedName === 'object' && 'name' in combinedName && 'server' in combinedName) {
+        toolName = (combinedName as any).name
+        serverName = (combinedName as any).server
       }
       
       if (toolName && serverName) {
@@ -1363,6 +1503,17 @@ onMounted(() => {
 
 .arg-input {
   width: 100px;
+  margin-bottom: 4px;
+}
+
+/* 头部输入 */
+.header-tag {
+  margin-right: 4px;
+  margin-bottom: 4px;
+}
+
+.header-input {
+  width: 150px;
   margin-bottom: 4px;
 }
 

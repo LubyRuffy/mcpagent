@@ -17,10 +17,12 @@ var (
 
 // MCP服务器配置相关错误
 var (
-	ErrMCPServerConfigNameEmpty    = errors.New("MCP服务器配置名称不能为空")
-	ErrMCPServerConfigCommandEmpty = errors.New("MCP服务器启动命令不能为空")
-	ErrMCPServerConfigNotFound     = errors.New("MCP服务器配置不存在")
-	ErrMCPServerConfigNameExists   = errors.New("MCP服务器配置名称已存在")
+	ErrMCPServerConfigNameEmpty            = errors.New("MCP服务器配置名称不能为空")
+	ErrMCPServerConfigCommandEmpty         = errors.New("MCP服务器启动命令不能为空")
+	ErrMCPServerConfigURLEmpty             = errors.New("MCP服务器URL不能为空")
+	ErrMCPServerConfigInvalidTransportType = errors.New("MCP服务器传输类型无效，仅支持 stdio、sse 和 http")
+	ErrMCPServerConfigNotFound             = errors.New("MCP服务器配置不存在")
+	ErrMCPServerConfigNameExists           = errors.New("MCP服务器配置名称已存在")
 )
 
 // MCP工具相关错误

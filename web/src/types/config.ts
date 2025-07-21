@@ -44,9 +44,15 @@ export interface MCPServerConfigModel {
   id: number
   name: string
   description: string
+  transport_type: string // 传输类型：stdio, sse, http
+  // STDIO specific fields
   command: string
   args: string // JSON格式存储的参数列表
   env: string  // JSON格式存储的环境变量
+  // SSE/HTTP specific fields  
+  url: string
+  headers: string // JSON格式存储的HTTP头部
+  // Common fields
   disabled: boolean
   is_active: boolean
   created_at: string
@@ -57,9 +63,15 @@ export interface MCPServerConfigModel {
 export interface CreateMCPServerConfigForm {
   name: string
   description: string
+  transport_type: string // 传输类型：stdio, sse, http
+  // STDIO specific fields
   command: string
   args: string[]
   env: Record<string, string>
+  // SSE/HTTP specific fields
+  url: string
+  headers: string[]
+  // Common fields
   disabled?: boolean
 }
 

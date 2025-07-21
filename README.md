@@ -28,6 +28,7 @@ MCPAgent 是一个基于 Model Context Protocol (MCP) 的智能代理框架，�
 
 - 🤖 **多模型支持**: 支持 OpenAI 和 Ollama 等多种 LLM 提供商
 - 🔧 **工具集成**: 基于 MCP 协议的丰富工具生态系统
+- 🌐 **多种连接方式**: 支持 STDIO（命令行）和 SSE（网络服务）两种 MCP 服务器连接方式
 - 🎯 **ReAct 架构**: 采用推理-行动循环的智能代理模式
 - ⚙️ **灵活配置**: 支持 YAML 配置文件和命令行参数
 - 🔄 **实时通知**: 提供任务执行过程的实时反馈
@@ -151,6 +152,10 @@ system_prompt: |
 
 参考 [官方文档](https://modelcontextprotocol.io/quickstart/user)
 
+MCP Agent 支持两种类型的 MCP 服务器：
+
+#### 1. STDIO 类型（命令行启动）
+
 ```json
 {
   "mcpServers": {
@@ -165,6 +170,25 @@ system_prompt: |
     "fetch": {
       "command": "uvx",
       "args": ["mcp-server-fetch"]
+    }
+  }
+}
+```
+
+#### 2. SSE 类型（网络服务）
+
+```json
+{
+  "mcpServers": {
+    "remote-api": {
+      "url": "http://localhost:8000/sse",
+      "headers": [
+        "Authorization: Bearer your-token-here",
+        "Content-Type: application/json"
+      ]
+    },
+    "cloud-service": {
+      "url": "https://api.example.com/mcp/sse"
     }
   }
 }
